@@ -1,36 +1,25 @@
-import {App, PluginSettingTab, Setting} from "obsidian";
-import MyPlugin from "./main";
+import { App, PluginSettingTab, Setting } from "obsidian";
+import PersonalFinancePlugin from "./main";
 
-export interface MyPluginSettings {
-	mySetting: string;
+export interface FinancePluginSettings {
+	// Future settings can be added here
 }
 
-export const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
+export const DEFAULT_SETTINGS: FinancePluginSettings = {
 }
 
-export class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+export class FinanceSettingTab extends PluginSettingTab {
+	plugin: PersonalFinancePlugin;
 
-	constructor(app: App, plugin: MyPlugin) {
+	constructor(app: App, plugin: PersonalFinancePlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
 	display(): void {
-		const {containerEl} = this;
-
+		const { containerEl } = this;
 		containerEl.empty();
-
-		new Setting(containerEl)
-			.setName('Settings #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
+		containerEl.createEl('h2', { text: 'Personal Finance Settings' });
+		containerEl.createEl('p', { text: 'Settings for the finance dashboard plugin.' });
 	}
 }

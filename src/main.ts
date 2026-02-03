@@ -1,71 +1,33 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, Keymap, BasesView, parsePropertyId } from 'obsidian';
-import { DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab } from "./settings";
+import { App, Plugin, BasesView, parsePropertyId } from 'obsidian';
+import { DEFAULT_SETTINGS, FinancePluginSettings, FinanceSettingTab } from "./settings";
+import { createPieChart, formatAccountName, formatCurrency } from "./utils/charts";
 
-export const ExampleViewType = 'example-view';
+export const FinanceDashboardViewType = 'finance-dashboard';
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class PersonalFinancePlugin extends Plugin {
+	settings: FinancePluginSettings;
 
 	async onload() {
 		await this.loadSettings();
 
 		// @ts-ignore
-		this.registerBasesView(ExampleViewType, {
+		this.registerBasesView(FinanceDashboardViewType, {
 			name: 'Finance Dashboard',
 			icon: 'lucide-wallet',
 			factory: (controller: any, containerEl: HTMLElement) => {
-				return new MyBasesView(controller, containerEl) as any
+				return new FinanceDashboardView(controller, containerEl) as any
 			},
 			options: () => ([]),
 		});
 
-		this.addRibbonIcon('lucide-wallet', 'Sample', (evt: MouseEvent) => {
-			new Notice('This is a notice!');
-		});
-
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
-
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-
-		// this.addCommand({
-		// 	id: 'replace-selected',
-		// 	name: 'Replace selected content',
-		// 	editorCallback: (editor: Editor, view: MarkdownView) => {
-		// 		editor.replaceSelection('Sample editor command');
-		// 	}
-		// });
-
-		// this.addCommand({
-		// 	id: 'open-modal-complex',
-		// 	name: 'Open modal (complex)',
-		// 	checkCallback: (checking: boolean) => {
-		// 		const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-		// 		if (markdownView) {
-		// 			if (!checking) {
-		// 				new SampleModal(this.app).open();
-		// 			}
-		// 			return true;
-		// 		}
-		// 		return false;
-		// 	}
-		// });
-
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-		// this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		this.addSettingTab(new FinanceSettingTab(this.app, this));
 	}
 
 	onunload() {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<FinancePluginSettings>);
 	}
 
 	async saveSettings() {
@@ -81,49 +43,23 @@ interface AccountCategory {
 }
 
 // @ts-ignore
-export class MyBasesView extends BasesView {
-	readonly type = ExampleViewType;
+export class FinanceDashboardView extends BasesView {
+	readonly type = FinanceDashboardViewType;
 	private containerEl: HTMLElement;
 	// @ts-ignore
 	public app: App;
 	public config: any;
 	public data: any;
 	private controller: any;
-	private chartJsLoaded: boolean = false;
 
 	constructor(controller: any, parentEl: HTMLElement) {
 		super(controller);
 		this.controller = controller;
 		this.containerEl = parentEl.createDiv('bases-finance-dashboard');
-		this.loadChartJs();
-		console.log(this);
-		sleep(3);
-
-		// console.log(this.data.getSummaryValue(this.controller, this.data.data, 'note.assets_hdfcbank', 'Sum'))
-	}
-
-	private async loadChartJs(): Promise<void> {
-		if (this.chartJsLoaded) return;
-
-		return new Promise((resolve) => {
-			// @ts-ignore
-			if (window.Chart) {
-				this.chartJsLoaded = true;
-				resolve();
-				return;
-			}
-
-			const script = document.createElement('script');
-			script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
-			script.onload = () => {
-				this.chartJsLoaded = true;
-				resolve();
-			};
-			document.head.appendChild(script);
-		});
 	}
 
 	private categorizeAccounts(): AccountCategory {
+
 		const categories: AccountCategory = {
 			assets: new Map(),
 			liabilities: new Map(),
@@ -134,29 +70,18 @@ export class MyBasesView extends BasesView {
 		const propertiesToProcess = this.allProperties || this.config.getOrder();
 		if (!propertiesToProcess) return categories;
 
-		const entriesToCheck = this.data.data || [];
-
 		for (const prop of propertiesToProcess) {
 			// @ts-ignore
 			const { type, name } = parsePropertyId(prop);
 			if (type !== 'note') continue;
+			// Use optimized getSummaryValue API
+			// @ts-ignore
+			const summaryValue = this.data.getSummaryValue(this.controller, this.data.data, prop, 'Sum');
+			// @ts-ignore
+			if (!summaryValue || !summaryValue.data || typeof summaryValue.data !== 'number') continue;
 
-			let sum = this.data.getSummaryValue(this.queryController, this.data.data, name, 'Sum').data;
-			console.log(type, name, sum);
-			// let count = 0;
-
-			// for (const entry of entriesToCheck) {
-			// 	// @ts-ignore
-			// 	const valueObj = entry.getValue(prop);
-			// 	// @ts-ignore
-			// 	if (valueObj && typeof valueObj.data === 'number') {
-			// 		// @ts-ignore
-			// 		sum += valueObj.data;
-			// 		count++;
-			// 	}
-			// }
-
-			// if (count === 0) continue;
+			// @ts-ignore
+			const sum = summaryValue.data;
 
 			// Categorize by prefix
 			const lowerName = name.toLowerCase();
@@ -178,7 +103,6 @@ export class MyBasesView extends BasesView {
 		this.containerEl.empty();
 		this.containerEl.addClass('finance-dashboard-container');
 
-		// Add styles
 		this.addStyles();
 
 		const categories = this.categorizeAccounts();
@@ -190,30 +114,30 @@ export class MyBasesView extends BasesView {
 		const totalExpenses = Array.from(categories.expenses.values()).reduce((a, b) => a + b, 0);
 		const netWorth = totalAssets + totalLiabilities; // liabilities are negative
 
-		// Create dashboard
+		// Create dashboard components
 		this.createNetWorthCard(netWorth, totalAssets, totalLiabilities);
 		this.createAccountBreakdown(categories);
 		this.createCharts(categories);
-		console.log(this.data.getSummaryValue(this.queryController, this.data.data, 'note.assets_sbibank', 'Sum'))
 	}
 
 	private createNetWorthCard(netWorth: number, assets: number, liabilities: number): void {
 		const card = this.containerEl.createDiv('dashboard-card net-worth-card');
 
-		const title = card.createEl('h2', { text: 'Net Worth' });
+		card.createEl('h2', { text: 'Net Worth' });
+
 		const amount = card.createDiv('net-worth-amount');
-		amount.textContent = this.formatCurrency(netWorth);
+		amount.textContent = formatCurrency(netWorth);
 		amount.className = netWorth >= 0 ? 'positive' : 'negative';
 
 		const breakdown = card.createDiv('net-worth-breakdown');
 
 		const assetsRow = breakdown.createDiv('breakdown-row');
 		assetsRow.createSpan({ text: 'Assets', cls: 'breakdown-label' });
-		assetsRow.createSpan({ text: this.formatCurrency(assets), cls: 'breakdown-value positive' });
+		assetsRow.createSpan({ text: formatCurrency(assets), cls: 'breakdown-value positive' });
 
 		const liabilitiesRow = breakdown.createDiv('breakdown-row');
 		liabilitiesRow.createSpan({ text: 'Liabilities', cls: 'breakdown-label' });
-		liabilitiesRow.createSpan({ text: this.formatCurrency(liabilities), cls: 'breakdown-value negative' });
+		liabilitiesRow.createSpan({ text: formatCurrency(liabilities), cls: 'breakdown-value negative' });
 	}
 
 	private createAccountBreakdown(categories: AccountCategory): void {
@@ -228,8 +152,8 @@ export class MyBasesView extends BasesView {
 				.sort((a, b) => b[1] - a[1])
 				.forEach(([name, value]) => {
 					const row = assetsCol.createDiv('account-row');
-					row.createSpan({ text: this.formatAccountName(name), cls: 'account-name' });
-					row.createSpan({ text: this.formatCurrency(value), cls: 'account-value positive' });
+					row.createSpan({ text: formatAccountName(name), cls: 'account-name' });
+					row.createSpan({ text: formatCurrency(value), cls: 'account-value positive' });
 				});
 		}
 
@@ -239,11 +163,25 @@ export class MyBasesView extends BasesView {
 			liabilitiesCol.createEl('h3', { text: 'Liabilities' });
 
 			Array.from(categories.liabilities.entries())
-				.sort((a, b) => a[1] - b[1]) // Sort by most negative first
+				.sort((a, b) => a[1] - b[1])
 				.forEach(([name, value]) => {
 					const row = liabilitiesCol.createDiv('account-row');
-					row.createSpan({ text: this.formatAccountName(name), cls: 'account-name' });
-					row.createSpan({ text: this.formatCurrency(value), cls: 'account-value negative' });
+					row.createSpan({ text: formatAccountName(name), cls: 'account-name' });
+					row.createSpan({ text: formatCurrency(value), cls: 'account-value negative' });
+				});
+		}
+
+		// Income column
+		if (categories.income.size > 0) {
+			const incomeCol = container.createDiv('account-column');
+			incomeCol.createEl('h3', { text: 'Income' });
+
+			Array.from(categories.income.entries())
+				.sort((a, b) => a[1] - b[1])
+				.forEach(([name, value]) => {
+					const row = incomeCol.createDiv('account-row');
+					row.createSpan({ text: formatAccountName(name), cls: 'account-name' });
+					row.createSpan({ text: formatCurrency(value), cls: 'account-value' });
 				});
 		}
 
@@ -256,17 +194,13 @@ export class MyBasesView extends BasesView {
 				.sort((a, b) => b[1] - a[1])
 				.forEach(([name, value]) => {
 					const row = expensesCol.createDiv('account-row');
-					row.createSpan({ text: this.formatAccountName(name), cls: 'account-name' });
-					row.createSpan({ text: this.formatCurrency(value), cls: 'account-value' });
+					row.createSpan({ text: formatAccountName(name), cls: 'account-name' });
+					row.createSpan({ text: formatCurrency(value), cls: 'account-value' });
 				});
 		}
 	}
 
-	private async createCharts(categories: AccountCategory): Promise<void> {
-		if (!this.chartJsLoaded) {
-			await this.loadChartJs();
-		}
-
+	private createCharts(categories: AccountCategory): void {
 		const chartsContainer = this.containerEl.createDiv('charts-container');
 
 		// Asset Distribution Chart
@@ -274,7 +208,7 @@ export class MyBasesView extends BasesView {
 			const assetChartDiv = chartsContainer.createDiv('chart-wrapper');
 			assetChartDiv.createEl('h3', { text: 'Asset Distribution' });
 			const canvas = assetChartDiv.createEl('canvas');
-			this.createPieChart(canvas, categories.assets, 'assets');
+			createPieChart(canvas, categories.assets, 'assets');
 		}
 
 		// Expense Distribution Chart
@@ -282,83 +216,8 @@ export class MyBasesView extends BasesView {
 			const expenseChartDiv = chartsContainer.createDiv('chart-wrapper');
 			expenseChartDiv.createEl('h3', { text: 'Expense Distribution' });
 			const canvas = expenseChartDiv.createEl('canvas');
-			this.createPieChart(canvas, categories.expenses, 'expenses');
+			createPieChart(canvas, categories.expenses, 'expenses');
 		}
-	}
-
-	private createPieChart(canvas: HTMLCanvasElement, data: Map<string, number>, type: string): void {
-		// @ts-ignore
-		if (!window.Chart) return;
-
-		const labels = Array.from(data.keys()).map(name => this.formatAccountName(name));
-		const values = Array.from(data.values()).map(v => Math.abs(v));
-
-		const colors = this.generateColors(data.size);
-
-		// @ts-ignore
-		new window.Chart(canvas, {
-			type: 'pie',
-			data: {
-				labels: labels,
-				datasets: [{
-					data: values,
-					backgroundColor: colors,
-					borderWidth: 2,
-					borderColor: '#1e1e1e'
-				}]
-			},
-			options: {
-				responsive: true,
-				maintainAspectRatio: true,
-				plugins: {
-					legend: {
-						position: 'bottom',
-						labels: {
-							color: 'var(--text-normal)',
-							padding: 10,
-							font: {
-								size: 12
-							}
-						}
-					},
-					tooltip: {
-						callbacks: {
-							label: (context: any) => {
-								const label = context.label || '';
-								const value = this.formatCurrency(context.parsed);
-								return `${label}: ${value}`;
-							}
-						}
-					}
-				}
-			}
-		});
-	}
-
-	private generateColors(count: number): string[] {
-		const colors = [
-			'#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
-			'#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384'
-		];
-		return colors.slice(0, count);
-	}
-
-	private formatAccountName(name: string): string {
-		// Remove prefixes and format
-		return name
-			.replace(/^(assets?|liabilities?|income|expenses?)_?/i, '')
-			.replace(/[._]/g, ' ')
-			.split(' ')
-			.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-			.join(' ');
-	}
-
-	private formatCurrency(amount: number): string {
-		return new Intl.NumberFormat('en-US', {
-			style: 'currency',
-			currency: 'USD',
-			minimumFractionDigits: 2
-		}).format(amount);
 	}
 
 	private addStyles(): void {
@@ -518,11 +377,5 @@ export class MyBasesView extends BasesView {
 			}
 		`;
 		document.head.appendChild(style);
-	}
-}
-
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
 	}
 }
