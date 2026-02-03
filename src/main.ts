@@ -1,8 +1,6 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, Keymap, BasesView, parsePropertyId } from 'obsidian';
 import { DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab } from "./settings";
 
-// Remember to rename these classes and interfaces!
-
 export const ExampleViewType = 'example-view';
 
 export default class MyPlugin extends Plugin {
@@ -11,39 +9,23 @@ export default class MyPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		// Tell Obsidian about the new view type that this plugin provides.
 		// @ts-ignore
 		this.registerBasesView(ExampleViewType, {
-			name: 'Example',
-			icon: 'lucide-graduation-cap',
+			name: 'Finance Dashboard',
+			icon: 'lucide-wallet',
 			factory: (controller: any, containerEl: HTMLElement) => {
 				return new MyBasesView(controller, containerEl) as any
 			},
-			options: () => ([
-				{
-					// The type of option. 'text' is a text input.
-					type: 'text',
-					// The name displayed in the settings menu.
-					displayName: 'Property separator',
-					// The value saved to the view settings.
-					key: 'separator',
-					// The default value for this option.
-					default: ' - ',
-				},
-			]),
+			options: () => ([]),
 		});
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
+		this.addRibbonIcon('lucide-wallet', 'Sample', (evt: MouseEvent) => {
 			new Notice('This is a notice!');
 		});
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
 		const statusBarItemEl = this.addStatusBarItem();
 		statusBarItemEl.setText('Status bar text');
 
-		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
 			id: 'open-modal-simple',
 			name: 'Open modal (simple)',
@@ -51,47 +33,32 @@ export default class MyPlugin extends Plugin {
 				new SampleModal(this.app).open();
 			}
 		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			}
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		// this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-		// 	new Notice("Click");
+		// this.addCommand({
+		// 	id: 'replace-selected',
+		// 	name: 'Replace selected content',
+		// 	editorCallback: (editor: Editor, view: MarkdownView) => {
+		// 		editor.replaceSelection('Sample editor command');
+		// 	}
 		// });
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		// this.addCommand({
+		// 	id: 'open-modal-complex',
+		// 	name: 'Open modal (complex)',
+		// 	checkCallback: (checking: boolean) => {
+		// 		const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
+		// 		if (markdownView) {
+		// 			if (!checking) {
+		// 				new SampleModal(this.app).open();
+		// 			}
+		// 			return true;
+		// 		}
+		// 		return false;
+		// 	}
+		// });
 
+		this.addSettingTab(new SampleSettingTab(this.app, this));
+		// this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
 	}
 
 	onunload() {
@@ -106,8 +73,12 @@ export default class MyPlugin extends Plugin {
 	}
 }
 
-// @ts-ignore
-// declare const parsePropertyId: any;
+interface AccountCategory {
+	assets: Map<string, number>;
+	liabilities: Map<string, number>;
+	income: Map<string, number>;
+	expenses: Map<string, number>;
+}
 
 // @ts-ignore
 export class MyBasesView extends BasesView {
@@ -117,97 +88,436 @@ export class MyBasesView extends BasesView {
 	public app: App;
 	public config: any;
 	public data: any;
-
+	private controller: any;
+	private chartJsLoaded: boolean = false;
 
 	constructor(controller: any, parentEl: HTMLElement) {
 		super(controller);
-		this.containerEl = parentEl.createDiv('bases-example-view-container');
+		this.controller = controller;
+		this.containerEl = parentEl.createDiv('bases-finance-dashboard');
+		this.loadChartJs();
+		console.log(this);
+		sleep(3);
+
+		// console.log(this.data.getSummaryValue(this.controller, this.data.data, 'note.assets_hdfcbank', 'Sum'))
+	}
+
+	private async loadChartJs(): Promise<void> {
+		if (this.chartJsLoaded) return;
+
+		return new Promise((resolve) => {
+			// @ts-ignore
+			if (window.Chart) {
+				this.chartJsLoaded = true;
+				resolve();
+				return;
+			}
+
+			const script = document.createElement('script');
+			script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
+			script.onload = () => {
+				this.chartJsLoaded = true;
+				resolve();
+			};
+			document.head.appendChild(script);
+		});
+	}
+
+	private categorizeAccounts(): AccountCategory {
+		const categories: AccountCategory = {
+			assets: new Map(),
+			liabilities: new Map(),
+			income: new Map(),
+			expenses: new Map()
+		};
+
+		const propertiesToProcess = this.allProperties || this.config.getOrder();
+		if (!propertiesToProcess) return categories;
+
+		const entriesToCheck = this.data.data || [];
+
+		for (const prop of propertiesToProcess) {
+			// @ts-ignore
+			const { type, name } = parsePropertyId(prop);
+			if (type !== 'note') continue;
+
+			let sum = this.data.getSummaryValue(this.queryController, this.data.data, name, 'Sum').data;
+			console.log(type, name, sum);
+			// let count = 0;
+
+			// for (const entry of entriesToCheck) {
+			// 	// @ts-ignore
+			// 	const valueObj = entry.getValue(prop);
+			// 	// @ts-ignore
+			// 	if (valueObj && typeof valueObj.data === 'number') {
+			// 		// @ts-ignore
+			// 		sum += valueObj.data;
+			// 		count++;
+			// 	}
+			// }
+
+			// if (count === 0) continue;
+
+			// Categorize by prefix
+			const lowerName = name.toLowerCase();
+			if (lowerName.startsWith('asset')) {
+				categories.assets.set(name, sum);
+			} else if (lowerName.startsWith('liabilit')) {
+				categories.liabilities.set(name, sum);
+			} else if (lowerName.startsWith('income')) {
+				categories.income.set(name, sum);
+			} else if (lowerName.startsWith('expense')) {
+				categories.expenses.set(name, sum);
+			}
+		}
+
+		return categories;
 	}
 
 	public onDataUpdated(): void {
-		const { app } = this;
-
-		// Retrieve the user configured order set in the Properties menu.
-		const order = this.config.getOrder()
-
-		// Clear entries created by previous iterations. Remember, you should
-		// instead attempt element reuse when possible.
 		this.containerEl.empty();
+		this.containerEl.addClass('finance-dashboard-container');
 
-		// The property separator configured by the ViewOptions above can be
-		// retrieved from the view config. Be sure to set a default value.
-		const propertySeparator = String(this.config.get('separator')) || ' - ';
+		// Add styles
+		this.addStyles();
 
-		// this.data contains both grouped and ungrouped versions of the data.
-		// If it's appropriate for your view type, use the grouped form.
-		for (const group of this.data.groupedData) {
-			const groupEl = this.containerEl.createDiv('bases-list-group');
-			const groupListEl = groupEl.createEl('ul', 'bases-list-group-list');
+		const categories = this.categorizeAccounts();
 
-			// Each entry in the group is a separate file in the vault matching
-			// the Base filters. For list view, each entry is a separate line.
-			for (const entry of group.entries) {
-				groupListEl.createEl('li', 'bases-list-entry', (el) => {
-					let firstProp = true;
-					for (const propertyName of order) {
-						// Properties in the order can be parsed to determine what type
-						// they are: formula, note, or file.
-						// @ts-ignore
-						const { type, name } = parsePropertyId(propertyName);
+		// Calculate totals
+		const totalAssets = Array.from(categories.assets.values()).reduce((a, b) => a + b, 0);
+		const totalLiabilities = Array.from(categories.liabilities.values()).reduce((a, b) => a + b, 0);
+		const totalIncome = Array.from(categories.income.values()).reduce((a, b) => a + b, 0);
+		const totalExpenses = Array.from(categories.expenses.values()).reduce((a, b) => a + b, 0);
+		const netWorth = totalAssets + totalLiabilities; // liabilities are negative
 
-						// `entry.getValue` returns the evaluated result of the property
-						// in the context of this entry.
-						const value = entry.getValue(propertyName);
+		// Create dashboard
+		this.createNetWorthCard(netWorth, totalAssets, totalLiabilities);
+		this.createAccountBreakdown(categories);
+		this.createCharts(categories);
+		console.log(this.data.getSummaryValue(this.queryController, this.data.data, 'note.assets_sbibank', 'Sum'))
+	}
 
-						// Skip rendering properties which have an empty value.
-						// The list items for each file may have differing length.
-						if (!value) continue;
+	private createNetWorthCard(netWorth: number, assets: number, liabilities: number): void {
+		const card = this.containerEl.createDiv('dashboard-card net-worth-card');
 
-						if (!firstProp) {
-							el.createSpan({
-								cls: 'bases-list-separator',
-								text: propertySeparator
-							});
+		const title = card.createEl('h2', { text: 'Net Worth' });
+		const amount = card.createDiv('net-worth-amount');
+		amount.textContent = this.formatCurrency(netWorth);
+		amount.className = netWorth >= 0 ? 'positive' : 'negative';
+
+		const breakdown = card.createDiv('net-worth-breakdown');
+
+		const assetsRow = breakdown.createDiv('breakdown-row');
+		assetsRow.createSpan({ text: 'Assets', cls: 'breakdown-label' });
+		assetsRow.createSpan({ text: this.formatCurrency(assets), cls: 'breakdown-value positive' });
+
+		const liabilitiesRow = breakdown.createDiv('breakdown-row');
+		liabilitiesRow.createSpan({ text: 'Liabilities', cls: 'breakdown-label' });
+		liabilitiesRow.createSpan({ text: this.formatCurrency(liabilities), cls: 'breakdown-value negative' });
+	}
+
+	private createAccountBreakdown(categories: AccountCategory): void {
+		const container = this.containerEl.createDiv('account-breakdown-container');
+
+		// Assets column
+		if (categories.assets.size > 0) {
+			const assetsCol = container.createDiv('account-column');
+			assetsCol.createEl('h3', { text: 'Assets' });
+
+			Array.from(categories.assets.entries())
+				.sort((a, b) => b[1] - a[1])
+				.forEach(([name, value]) => {
+					const row = assetsCol.createDiv('account-row');
+					row.createSpan({ text: this.formatAccountName(name), cls: 'account-name' });
+					row.createSpan({ text: this.formatCurrency(value), cls: 'account-value positive' });
+				});
+		}
+
+		// Liabilities column
+		if (categories.liabilities.size > 0) {
+			const liabilitiesCol = container.createDiv('account-column');
+			liabilitiesCol.createEl('h3', { text: 'Liabilities' });
+
+			Array.from(categories.liabilities.entries())
+				.sort((a, b) => a[1] - b[1]) // Sort by most negative first
+				.forEach(([name, value]) => {
+					const row = liabilitiesCol.createDiv('account-row');
+					row.createSpan({ text: this.formatAccountName(name), cls: 'account-name' });
+					row.createSpan({ text: this.formatCurrency(value), cls: 'account-value negative' });
+				});
+		}
+
+		// Expenses column
+		if (categories.expenses.size > 0) {
+			const expensesCol = container.createDiv('account-column');
+			expensesCol.createEl('h3', { text: 'Expenses' });
+
+			Array.from(categories.expenses.entries())
+				.sort((a, b) => b[1] - a[1])
+				.forEach(([name, value]) => {
+					const row = expensesCol.createDiv('account-row');
+					row.createSpan({ text: this.formatAccountName(name), cls: 'account-name' });
+					row.createSpan({ text: this.formatCurrency(value), cls: 'account-value' });
+				});
+		}
+	}
+
+	private async createCharts(categories: AccountCategory): Promise<void> {
+		if (!this.chartJsLoaded) {
+			await this.loadChartJs();
+		}
+
+		const chartsContainer = this.containerEl.createDiv('charts-container');
+
+		// Asset Distribution Chart
+		if (categories.assets.size > 0) {
+			const assetChartDiv = chartsContainer.createDiv('chart-wrapper');
+			assetChartDiv.createEl('h3', { text: 'Asset Distribution' });
+			const canvas = assetChartDiv.createEl('canvas');
+			this.createPieChart(canvas, categories.assets, 'assets');
+		}
+
+		// Expense Distribution Chart
+		if (categories.expenses.size > 0) {
+			const expenseChartDiv = chartsContainer.createDiv('chart-wrapper');
+			expenseChartDiv.createEl('h3', { text: 'Expense Distribution' });
+			const canvas = expenseChartDiv.createEl('canvas');
+			this.createPieChart(canvas, categories.expenses, 'expenses');
+		}
+	}
+
+	private createPieChart(canvas: HTMLCanvasElement, data: Map<string, number>, type: string): void {
+		// @ts-ignore
+		if (!window.Chart) return;
+
+		const labels = Array.from(data.keys()).map(name => this.formatAccountName(name));
+		const values = Array.from(data.values()).map(v => Math.abs(v));
+
+		const colors = this.generateColors(data.size);
+
+		// @ts-ignore
+		new window.Chart(canvas, {
+			type: 'pie',
+			data: {
+				labels: labels,
+				datasets: [{
+					data: values,
+					backgroundColor: colors,
+					borderWidth: 2,
+					borderColor: '#1e1e1e'
+				}]
+			},
+			options: {
+				responsive: true,
+				maintainAspectRatio: true,
+				plugins: {
+					legend: {
+						position: 'bottom',
+						labels: {
+							color: 'var(--text-normal)',
+							padding: 10,
+							font: {
+								size: 12
+							}
 						}
-						firstProp = false;
-
-						// If the `file.name` property is included in the order, render
-						// it specially so that it links to that file.
-						if (name === 'name' && type === 'file') {
-							const fileName = String(entry.file.name);
-							const linkEl = el.createEl('a', { text: fileName });
-							linkEl.onClickEvent((evt) => {
-								if (evt.button !== 0 && evt.button !== 1) return;
-								evt.preventDefault();
-								const path = entry.file.path;
-								// @ts-ignore
-								const modEvent = Keymap.isModEvent(evt);
-								void app.workspace.openLinkText(path, '', modEvent);
-							});
-
-							linkEl.addEventListener('mouseover', (evt) => {
-								app.workspace.trigger('hover-link', {
-									event: evt,
-									source: 'bases',
-									hoverParent: this,
-									targetEl: linkEl,
-									linktext: entry.file.path,
-								});
-							});
-						}
-						// For all other properties, just display the value as text.
-						// In your view you may also choose to use the `Value.renderTo`
-						// API to better support photos, links, icons, etc.
-						else {
-							el.createSpan({
-								cls: 'bases-list-entry-property',
-								text: value.toString()
-							});
+					},
+					tooltip: {
+						callbacks: {
+							label: (context: any) => {
+								const label = context.label || '';
+								const value = this.formatCurrency(context.parsed);
+								return `${label}: ${value}`;
+							}
 						}
 					}
-				});
+				}
 			}
-		}
+		});
+	}
+
+	private generateColors(count: number): string[] {
+		const colors = [
+			'#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+			'#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384'
+		];
+		return colors.slice(0, count);
+	}
+
+	private formatAccountName(name: string): string {
+		// Remove prefixes and format
+		return name
+			.replace(/^(assets?|liabilities?|income|expenses?)_?/i, '')
+			.replace(/[._]/g, ' ')
+			.split(' ')
+			.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+			.join(' ');
+	}
+
+	private formatCurrency(amount: number): string {
+		return new Intl.NumberFormat('en-US', {
+			style: 'currency',
+			currency: 'USD',
+			minimumFractionDigits: 2
+		}).format(amount);
+	}
+
+	private addStyles(): void {
+		const styleEl = document.getElementById('finance-dashboard-styles');
+		if (styleEl) return;
+
+		const style = document.createElement('style');
+		style.id = 'finance-dashboard-styles';
+		style.textContent = `
+			.finance-dashboard-container {
+				padding: 20px;
+				font-family: var(--font-interface);
+			}
+
+			.dashboard-card {
+				background: var(--background-secondary);
+				border-radius: 12px;
+				padding: 24px;
+				margin-bottom: 20px;
+				box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+				border: 1px solid var(--background-modifier-border);
+			}
+
+			.net-worth-card h2 {
+				margin: 0 0 16px 0;
+				font-size: 18px;
+				color: var(--text-muted);
+				text-transform: uppercase;
+				letter-spacing: 1px;
+			}
+
+			.net-worth-amount {
+				font-size: 48px;
+				font-weight: 700;
+				margin-bottom: 20px;
+				font-family: var(--font-monospace);
+			}
+
+			.net-worth-amount.positive {
+				color: #10b981;
+			}
+
+			.net-worth-amount.negative {
+				color: #ef4444;
+			}
+
+			.net-worth-breakdown {
+				border-top: 1px solid var(--background-modifier-border);
+				padding-top: 16px;
+			}
+
+			.breakdown-row {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				padding: 8px 0;
+			}
+
+			.breakdown-label {
+				font-size: 16px;
+				color: var(--text-normal);
+			}
+
+			.breakdown-value {
+				font-size: 20px;
+				font-weight: 600;
+				font-family: var(--font-monospace);
+			}
+
+			.breakdown-value.positive {
+				color: #10b981;
+			}
+
+			.breakdown-value.negative {
+				color: #ef4444;
+			}
+
+			.account-breakdown-container {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+				gap: 20px;
+				margin-bottom: 20px;
+			}
+
+			.account-column {
+				background: var(--background-secondary);
+				border-radius: 12px;
+				padding: 20px;
+				border: 1px solid var(--background-modifier-border);
+			}
+
+			.account-column h3 {
+				margin: 0 0 16px 0;
+				font-size: 16px;
+				color: var(--text-muted);
+				text-transform: uppercase;
+				letter-spacing: 1px;
+				border-bottom: 2px solid var(--background-modifier-border);
+				padding-bottom: 8px;
+			}
+
+			.account-row {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				padding: 10px 0;
+				border-bottom: 1px solid var(--background-modifier-border-hover);
+			}
+
+			.account-row:last-child {
+				border-bottom: none;
+			}
+
+			.account-name {
+				font-size: 14px;
+				color: var(--text-normal);
+			}
+
+			.account-value {
+				font-size: 16px;
+				font-weight: 600;
+				font-family: var(--font-monospace);
+			}
+
+			.account-value.positive {
+				color: #10b981;
+			}
+
+			.account-value.negative {
+				color: #ef4444;
+			}
+
+			.charts-container {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+				gap: 20px;
+			}
+
+			.chart-wrapper {
+				background: var(--background-secondary);
+				border-radius: 12px;
+				padding: 20px;
+				border: 1px solid var(--background-modifier-border);
+			}
+
+			.chart-wrapper h3 {
+				margin: 0 0 16px 0;
+				font-size: 16px;
+				color: var(--text-muted);
+				text-transform: uppercase;
+				letter-spacing: 1px;
+				text-align: center;
+			}
+
+			.chart-wrapper canvas {
+				max-height: 300px;
+			}
+		`;
+		document.head.appendChild(style);
 	}
 }
 
@@ -215,14 +525,4 @@ class SampleModal extends Modal {
 	constructor(app: App) {
 		super(app);
 	}
-
-	// onOpen() {
-	// 	let { contentEl } = this;
-	// 	contentEl.setText('Woah!');
-	// }
-
-	// onClose() {
-	// 	const { contentEl } = this;
-	// 	contentEl.empty();
-	// }
 }
