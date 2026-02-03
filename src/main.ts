@@ -1,4 +1,4 @@
-import { App, Plugin, BasesView, parsePropertyId } from 'obsidian';
+import { App, Plugin, BasesView, parsePropertyId, Modal, Notice, TFolder, TFile } from 'obsidian';
 import { DEFAULT_SETTINGS, FinancePluginSettings, FinanceSettingTab } from "./settings";
 import { createPieChart, formatCurrency } from "./utils/charts";
 
@@ -39,6 +39,31 @@ export default class PersonalFinancePlugin extends Plugin {
 			options: () => ([]),
 		});
 
+		// Add commands
+		this.addCommand({
+			id: 'update-currency-rate',
+			name: 'Update USD to INR Rate',
+			callback: () => new CurrencyRateModal(this.app, this).open()
+		});
+
+		this.addCommand({
+			id: 'update-table-rows',
+			name: 'Update Table Rows Count',
+			callback: () => new TableRowsModal(this.app, this).open()
+		});
+
+		this.addCommand({
+			id: 'update-commodity-prices',
+			name: 'Update Commodity Prices',
+			callback: () => new CommodityPricesModal(this.app, this).open()
+		});
+
+		this.addCommand({
+			id: 'create-snapshot',
+			name: 'Create Snapshot',
+			callback: async () => await this.createSnapshot()
+		});
+
 		this.addSettingTab(new FinanceSettingTab(this.app, this));
 	}
 
@@ -51,6 +76,189 @@ export default class PersonalFinancePlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	async createSnapshot() {
+		try {
+			// Ensure snapshots folder exists
+			const folderPath = this.settings.snapshotsFolderPath;
+			const folder = this.app.vault.getAbstractFileByPath(folderPath);
+
+			if (!folder) {
+				await this.app.vault.createFolder(folderPath);
+			}
+
+			// Get all dashboard views to access categorized data
+			const dashboardView = this.app.workspace.getLeavesOfType(FinanceDashboardViewType)[0];
+			if (!dashboardView) {
+				new Notice('Please open Finance Dashboard view first');
+				return;
+			}
+
+			// @ts-ignore
+			const view = dashboardView.view as FinanceDashboardView;
+			const categories = view.categorizeAccounts();
+
+			// Create frontmatter with all accounts
+			const frontmatter: Record<string, number> = {};
+
+			for (const [name, value] of categories.assets) {
+				frontmatter[name] = value;
+			}
+			for (const [name, value] of categories.liabilities) {
+				frontmatter[name] = value;
+			}
+			for (const [name, value] of categories.income) {
+				frontmatter[name] = value;
+			}
+			for (const [name, value] of categories.expenses) {
+				frontmatter[name] = value;
+			}
+
+			// Add date
+			const now = new Date();
+			const dateStr = now.toISOString();
+
+			// Create file content
+			const yamlLines = ['---'];
+			for (const [key, value] of Object.entries(frontmatter)) {
+				yamlLines.push(`${key}: ${value}`);
+			}
+			yamlLines.push(`date: ${dateStr}`);
+			yamlLines.push('---');
+			yamlLines.push('');
+			yamlLines.push(`Snapshot taken at: ${now.toLocaleString()}`);
+
+			const content = yamlLines.join('\n');
+
+			// Create filename with timestamp
+			const filename = `snapshot-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}.md`;
+			const filepath = `${folderPath}/${filename}`;
+
+			await this.app.vault.create(filepath, content);
+			new Notice(`Snapshot created: ${filename}`);
+		} catch (error: any) {
+			new Notice(`Error creating snapshot: ${error.message}`);
+			console.error('Snapshot creation error:', error);
+		}
+	}
+}
+
+// Modal Classes
+class CurrencyRateModal extends Modal {
+	plugin: PersonalFinancePlugin;
+
+	constructor(app: App, plugin: PersonalFinancePlugin) {
+		super(app);
+		this.plugin = plugin;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.createEl('h2', { text: 'Update USD to INR Rate' });
+
+		const input = contentEl.createEl('input', {
+			type: 'number',
+			value: this.plugin.settings.usdToInr.toString()
+		});
+		input.style.width = '100%';
+		input.style.marginBottom = '10px';
+
+		const button = contentEl.createEl('button', { text: 'Update' });
+		button.addEventListener('click', async () => {
+			const value = parseFloat(input.value);
+			if (!isNaN(value) && value > 0) {
+				this.plugin.settings.usdToInr = value;
+				await this.plugin.saveSettings();
+				new Notice(`Currency rate updated to ${value}`);
+				this.close();
+			} else {
+				new Notice('Please enter a valid number');
+			}
+		});
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+class TableRowsModal extends Modal {
+	plugin: PersonalFinancePlugin;
+
+	constructor(app: App, plugin: PersonalFinancePlugin) {
+		super(app);
+		this.plugin = plugin;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.createEl('h2', { text: 'Update Table Rows Count' });
+
+		const input = contentEl.createEl('input', {
+			type: 'number',
+			value: this.plugin.settings.tableRowsToShow.toString()
+		});
+		input.style.width = '100%';
+		input.style.marginBottom = '10px';
+
+		const button = contentEl.createEl('button', { text: 'Update' });
+		button.addEventListener('click', async () => {
+			const value = parseInt(input.value);
+			if (!isNaN(value) && value > 0) {
+				this.plugin.settings.tableRowsToShow = value;
+				await this.plugin.saveSettings();
+				new Notice(`Table rows updated to ${value}`);
+				this.close();
+			} else {
+				new Notice('Please enter a valid number');
+			}
+		});
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
+class CommodityPricesModal extends Modal {
+	plugin: PersonalFinancePlugin;
+
+	constructor(app: App, plugin: PersonalFinancePlugin) {
+		super(app);
+		this.plugin = plugin;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.createEl('h2', { text: 'Update Commodity Prices' });
+		contentEl.createEl('p', { text: 'Enter JSON format: {"QCOM": {"value": 150.50, "currency": "$"}}' });
+
+		const textarea = contentEl.createEl('textarea');
+		textarea.value = JSON.stringify(this.plugin.settings.commodityPrices, null, 2);
+		textarea.style.width = '100%';
+		textarea.style.height = '200px';
+		textarea.style.marginBottom = '10px';
+
+		const button = contentEl.createEl('button', { text: 'Update' });
+		button.addEventListener('click', async () => {
+			try {
+				const parsed = JSON.parse(textarea.value);
+				this.plugin.settings.commodityPrices = parsed;
+				await this.plugin.saveSettings();
+				new Notice('Commodity prices updated');
+				this.close();
+			} catch (error) {
+				new Notice('Invalid JSON format');
+			}
+		});
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
 	}
 }
 
@@ -115,7 +323,7 @@ export class FinanceDashboardView extends BasesView {
 		this.containerEl = parentEl.createDiv('bases-finance-dashboard');
 	}
 
-	private categorizeAccounts(): AccountCategory {
+	public categorizeAccounts(): AccountCategory {
 
 		const categories: AccountCategory = {
 			assets: new Map(),
@@ -212,85 +420,131 @@ export class FinanceDashboardView extends BasesView {
 	private createAccountBreakdown(categories: AccountCategory): void {
 		const container = this.containerEl.createDiv('account-breakdown-container');
 
+		// Top Row: Assets and Liabilities side by side
+		const topRow = container.createDiv('breakdown-row-container');
+
 		// Assets column
 		if (categories.assets.size > 0) {
-			const assetsCol = container.createDiv('account-column');
-			assetsCol.createEl('h3', { text: 'Assets' });
+			const assetsCol = topRow.createDiv('account-column');
+			const assetTotal = Array.from(categories.assets.values()).reduce((sum, val) => sum + val, 0);
 
-			Array.from(categories.assets.entries())
-				.sort((a, b) => b[1] - a[1])
-				.forEach(([name, value]) => {
-					const row = assetsCol.createDiv('account-row');
+			const headerDiv = assetsCol.createDiv('column-header');
+			headerDiv.createEl('h3', { text: 'Assets' });
+			headerDiv.createSpan({ text: formatCurrency(assetTotal, this.plugin.settings.currencySymbol), cls: 'category-sum' });
 
-					// Add color class
-					if (name.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
-						row.addClass('col-commodity');
-					} else {
-						row.addClass('col-asset');
-					}
+			const assetEntries = Array.from(categories.assets.entries()).sort((a, b) => b[1] - a[1]);
 
-					const nameSpan = row.createSpan({ text: name, cls: 'account-name' });
-					const valueSpan = row.createSpan({ text: formatCurrency(value, this.plugin.settings.currencySymbol), cls: 'account-value positive' });
+			assetEntries.forEach(([name, value]) => {
+				const row = assetsCol.createDiv('account-row');
 
-					// Add formula for commodities
-					if (name.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
-						const commodityName = name.replace(ACCOUNT_PREFIXES.COMMODITY, '');
-						const pricing = this.plugin.settings.commodityPrices[commodityName];
-						if (pricing) {
-							const formulaDiv = row.createDiv({ cls: 'commodity-formula' });
-							if (pricing.currency !== this.plugin.settings.currencySymbol) {
-								formulaDiv.textContent = `${pricing.value} ${pricing.currency}/unit × ${this.plugin.settings.usdToInr} ${this.plugin.settings.currencySymbol}/USD`;
-							} else {
-								formulaDiv.textContent = `${pricing.value} ${pricing.currency}/unit`;
+				// Add color class
+				if (name.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
+					row.addClass('col-commodity');
+				} else {
+					row.addClass('col-asset');
+				}
+
+				// For commodities, get the raw quantity
+				if (name.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
+					const commodityName = name.replace(ACCOUNT_PREFIXES.COMMODITY, '');
+					const pricing = this.plugin.settings.commodityPrices[commodityName];
+
+					// Calculate raw units from value
+					let units = 0;
+					if (pricing) {
+						let pricePerUnit = pricing.value;
+						if (pricing.currency !== this.plugin.settings.currencySymbol) {
+							if (pricing.currency === '$' && this.plugin.settings.currencySymbol === '₹') {
+								pricePerUnit = pricePerUnit * this.plugin.settings.usdToInr;
+							} else if (pricing.currency === '₹' && this.plugin.settings.currencySymbol === '$') {
+								pricePerUnit = pricePerUnit / this.plugin.settings.usdToInr;
 							}
 						}
+						units = value / pricePerUnit;
 					}
-				});
+
+					const nameDiv = row.createDiv({ cls: 'account-name-container' });
+					nameDiv.createSpan({ text: name, cls: 'account-name' });
+					if (units > 0) {
+						nameDiv.createSpan({ text: ` (${units.toFixed(2)} units)`, cls: 'commodity-units' });
+					}
+
+					const valueSpan = row.createSpan({ text: formatCurrency(value, this.plugin.settings.currencySymbol), cls: 'account-value positive' });
+
+					// Add pricing formula
+					if (pricing) {
+						const formulaDiv = row.createDiv({ cls: 'commodity-formula' });
+						if (pricing.currency !== this.plugin.settings.currencySymbol) {
+							formulaDiv.textContent = `${pricing.value} ${pricing.currency}/unit × ${this.plugin.settings.usdToInr} ${this.plugin.settings.currencySymbol}/USD`;
+						} else {
+							formulaDiv.textContent = `${pricing.value} ${pricing.currency}/unit`;
+						}
+					}
+				} else {
+					row.createSpan({ text: name, cls: 'account-name' });
+					row.createSpan({ text: formatCurrency(value, this.plugin.settings.currencySymbol), cls: 'account-value positive' });
+				}
+			});
 		}
 
 		// Liabilities column
 		if (categories.liabilities.size > 0) {
-			const liabilitiesCol = container.createDiv('account-column');
-			liabilitiesCol.createEl('h3', { text: 'Liabilities' });
+			const liabilitiesCol = topRow.createDiv('account-column');
+			const liabilityTotal = Array.from(categories.liabilities.values()).reduce((sum, val) => sum + val, 0);
 
-			Array.from(categories.liabilities.entries())
-				.sort((a, b) => a[1] - b[1])
-				.forEach(([name, value]) => {
-					const row = liabilitiesCol.createDiv('account-row');
-					row.addClass('col-liability');
-					row.createSpan({ text: name, cls: 'account-name' });
-					row.createSpan({ text: formatCurrency(value, this.plugin.settings.currencySymbol), cls: 'account-value negative' });
-				});
+			const headerDiv = liabilitiesCol.createDiv('column-header');
+			headerDiv.createEl('h3', { text: 'Liabilities' });
+			headerDiv.createSpan({ text: formatCurrency(liabilityTotal, this.plugin.settings.currencySymbol), cls: 'category-sum' });
+
+			const liabilityEntries = Array.from(categories.liabilities.entries()).sort((a, b) => a[1] - b[1]);
+
+			liabilityEntries.forEach(([name, value]) => {
+				const row = liabilitiesCol.createDiv('account-row');
+				row.addClass('col-liability');
+				row.createSpan({ text: name, cls: 'account-name' });
+				row.createSpan({ text: formatCurrency(value, this.plugin.settings.currencySymbol), cls: 'account-value negative' });
+			});
 		}
+
+		// Bottom Row: Income and Expenses side by side
+		const bottomRow = container.createDiv('breakdown-row-container');
 
 		// Income column
 		if (categories.income.size > 0) {
-			const incomeCol = container.createDiv('account-column');
-			incomeCol.createEl('h3', { text: 'Income' });
+			const incomeCol = bottomRow.createDiv('account-column');
+			const incomeTotal = Array.from(categories.income.values()).reduce((sum, val) => sum + val, 0);
 
-			Array.from(categories.income.entries())
-				.sort((a, b) => a[1] - b[1])
-				.forEach(([name, value]) => {
-					const row = incomeCol.createDiv('account-row');
-					row.addClass('col-income');
-					row.createSpan({ text: name, cls: 'account-name' });
-					row.createSpan({ text: formatCurrency(value, this.plugin.settings.currencySymbol), cls: 'account-value' });
-				});
+			const headerDiv = incomeCol.createDiv('column-header');
+			headerDiv.createEl('h3', { text: 'Income' });
+			headerDiv.createSpan({ text: formatCurrency(incomeTotal, this.plugin.settings.currencySymbol), cls: 'category-sum' });
+
+			const incomeEntries = Array.from(categories.income.entries()).sort((a, b) => a[1] - b[1]);
+
+			incomeEntries.forEach(([name, value]) => {
+				const row = incomeCol.createDiv('account-row');
+				row.addClass('col-income');
+				row.createSpan({ text: name, cls: 'account-name' });
+				row.createSpan({ text: formatCurrency(value, this.plugin.settings.currencySymbol), cls: 'account-value' });
+			});
 		}
 
 		// Expenses column
 		if (categories.expenses.size > 0) {
-			const expensesCol = container.createDiv('account-column');
-			expensesCol.createEl('h3', { text: 'Expenses' });
+			const expensesCol = bottomRow.createDiv('account-column');
+			const expenseTotal = Array.from(categories.expenses.values()).reduce((sum, val) => sum + val, 0);
 
-			Array.from(categories.expenses.entries())
-				.sort((a, b) => b[1] - a[1])
-				.forEach(([name, value]) => {
-					const row = expensesCol.createDiv('account-row');
-					row.addClass('col-expense');
-					row.createSpan({ text: name, cls: 'account-name' });
-					row.createSpan({ text: formatCurrency(value, this.plugin.settings.currencySymbol), cls: 'account-value' });
-				});
+			const headerDiv = expensesCol.createDiv('column-header');
+			headerDiv.createEl('h3', { text: 'Expenses' });
+			headerDiv.createSpan({ text: formatCurrency(expenseTotal, this.plugin.settings.currencySymbol), cls: 'category-sum' });
+
+			const expenseEntries = Array.from(categories.expenses.entries()).sort((a, b) => b[1] - a[1]);
+
+			expenseEntries.forEach(([name, value]) => {
+				const row = expensesCol.createDiv('account-row');
+				row.addClass('col-expense');
+				row.createSpan({ text: name, cls: 'account-name' });
+				row.createSpan({ text: formatCurrency(value, this.plugin.settings.currencySymbol), cls: 'account-value' });
+			});
 		}
 	}
 
@@ -390,10 +644,16 @@ export class FinanceDashboardView extends BasesView {
 			}
 
 			.account-breakdown-container {
-				display: grid;
-				grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+				display: flex;
+				flex-direction: column;
 				gap: 20px;
 				margin-bottom: 20px;
+			}
+
+			.breakdown-row-container {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+				gap: 20px;
 			}
 
 			.account-column {
@@ -404,21 +664,41 @@ export class FinanceDashboardView extends BasesView {
 			}
 
 			.account-column h3 {
-				margin: 0 0 16px 0;
+				margin: 0;
 				font-size: 16px;
 				color: var(--text-muted);
 				text-transform: uppercase;
 				letter-spacing: 1px;
+			}
+
+			.column-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				margin-bottom: 16px;
 				border-bottom: 2px solid var(--background-modifier-border);
 				padding-bottom: 8px;
 			}
 
+			.category-sum {
+				font-size: 18px;
+				font-weight: 700;
+				color: var(--text-accent);
+				font-family: var(--font-monospace);
+			}
+
 			.account-row {
 				display: flex;
-				justify-content: space-between;
-				align-items: center;
+				flex-direction: column;
 				padding: 10px 0;
 				border-bottom: 1px solid var(--background-modifier-border-hover);
+			}
+
+			.account-name-container {
+				display: flex;
+				flex-direction: row;
+				align-items: center;
+				margin-bottom: 4px;
 			}
 
 			.account-row:last-child {
@@ -433,10 +713,28 @@ export class FinanceDashboardView extends BasesView {
 			.account-value {
 				font-size: 16px;
 				font-weight: 600;
-				font-family: var(--font-monospace);
+			}
+
+			.commodity-units {
+				font-size: 12px;
+				color: var(--text-muted);
+				font-weight: normal;
+				margin-left: 4px;
+			}
+
+			.average-row {
+				font-weight: 600;
+				border-top: 2px solid var(--background-modifier-border);
+				margin-top: 8px;
+				padding-top: 12px;
+			}
+
+			.avg-value {
+				color: var(--text-accent);
 			}
 
 			.account-value.positive {
+				font-family: var(--font-monospace);
 				color: #10b981;
 			}
 
@@ -636,12 +934,20 @@ export class TransactionTableView extends BasesView {
 
 		for (const prop of accountProps) {
 			// @ts-ignore
+			const { name } = parsePropertyId(prop);
+			// @ts-ignore
 			const summaryValue = this.data.getSummaryValue(this.controller, this.data.data, prop, 'Sum');
 			const td = summaryRow.createEl('td', { cls: 'summary-value' });
 			// @ts-ignore
 			if (summaryValue && summaryValue.data && typeof summaryValue.data === 'number') {
-				// @ts-ignore
-				td.textContent = formatCurrency(summaryValue.data, this.plugin.settings.currencySymbol);
+				// Show raw quantity for commodities, currency for others
+				if (name.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
+					// @ts-ignore
+					td.textContent = summaryValue.data.toFixed(2);
+				} else {
+					// @ts-ignore
+					td.textContent = formatCurrency(summaryValue.data, this.plugin.settings.currencySymbol);
+				}
 			} else {
 				td.textContent = '-';
 			}
@@ -775,6 +1081,35 @@ export class TransactionTableView extends BasesView {
 			.transaction-table td {
 				padding: 10px 12px;
 				border: 1px solid var(--background-modifier-border);
+			}
+
+			.transaction-table th:nth-child(1),
+			.transaction-table td:nth-child(1) {
+				width: 100px;
+				max-width: 100px;
+			}
+
+			.transaction-table th:nth-child(2),
+			.transaction-table td:nth-child(2) {
+				width: 120px;
+				max-width: 120px;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+
+			.transaction-table th:nth-child(3),
+			.transaction-table td:nth-child(3) {
+				max-width: 150px;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+
+			.transaction-table th:nth-child(4),
+			.transaction-table td:nth-child(4) {
+				width: 50px;
+				max-width: 50px;
+				text-align: center;
 			}
 
 			.transaction-table tr:hover {

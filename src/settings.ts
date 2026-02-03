@@ -11,13 +11,15 @@ export interface FinancePluginSettings {
 	commodityPrices: Record<string, CommodityPrice>;
 	usdToInr: number;
 	tableRowsToShow: number;
+	snapshotsFolderPath: string;
 }
 
 export const DEFAULT_SETTINGS: FinancePluginSettings = {
 	currencySymbol: '₹',
 	commodityPrices: {},
 	usdToInr: 83.0,
-	tableRowsToShow: 10
+	tableRowsToShow: 10,
+	snapshotsFolderPath: 'transaction-snapshots'
 }
 
 export class FinanceSettingTab extends PluginSettingTab {
@@ -72,6 +74,17 @@ export class FinanceSettingTab extends PluginSettingTab {
 						this.plugin.settings.tableRowsToShow = parsed;
 						await this.plugin.saveSettings();
 					}
+				}));
+
+		new Setting(containerEl)
+			.setName('Snapshots Folder Path')
+			.setDesc('Folder path where snapshots will be saved (relative to vault root)')
+			.addText(text => text
+				.setPlaceholder('transaction-snapshots')
+				.setValue(this.plugin.settings.snapshotsFolderPath)
+				.onChange(async (value) => {
+					this.plugin.settings.snapshotsFolderPath = value;
+					await this.plugin.saveSettings();
 				}));
 
 		new Setting(containerEl)
