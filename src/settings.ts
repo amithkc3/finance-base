@@ -9,11 +9,15 @@ export interface CommodityPrice {
 export interface FinancePluginSettings {
 	currencySymbol: '₹' | '$';
 	commodityPrices: Record<string, CommodityPrice>;
+	usdToInr: number;
+	tableRowsToShow: number;
 }
 
 export const DEFAULT_SETTINGS: FinancePluginSettings = {
 	currencySymbol: '₹',
-	commodityPrices: {}
+	commodityPrices: {},
+	usdToInr: 83.0,
+	tableRowsToShow: 10
 }
 
 export class FinanceSettingTab extends PluginSettingTab {
@@ -40,6 +44,34 @@ export class FinanceSettingTab extends PluginSettingTab {
 				.onChange(async (value: '₹' | '$') => {
 					this.plugin.settings.currencySymbol = value;
 					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('USD to INR Conversion Rate')
+			.setDesc('Current exchange rate for converting USD to INR')
+			.addText(text => text
+				.setPlaceholder('83.0')
+				.setValue(this.plugin.settings.usdToInr.toString())
+				.onChange(async (value) => {
+					const parsed = parseFloat(value);
+					if (!isNaN(parsed) && parsed > 0) {
+						this.plugin.settings.usdToInr = parsed;
+						await this.plugin.saveSettings();
+					}
+				}));
+
+		new Setting(containerEl)
+			.setName('Table Rows to Display')
+			.setDesc('Number of transaction rows to show in the table view')
+			.addText(text => text
+				.setPlaceholder('10')
+				.setValue(this.plugin.settings.tableRowsToShow.toString())
+				.onChange(async (value) => {
+					const parsed = parseInt(value);
+					if (!isNaN(parsed) && parsed > 0) {
+						this.plugin.settings.tableRowsToShow = parsed;
+						await this.plugin.saveSettings();
+					}
 				}));
 
 		new Setting(containerEl)

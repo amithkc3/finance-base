@@ -144,12 +144,21 @@ export class FinanceDashboardView extends BasesView {
 			// @ts-ignore
 			let sum = summaryValue.data;
 
-			// Apply commodity pricing if applicable
+			// Apply commodity pricing with currency conversion if applicable
 			if (name.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
 				const commodityName = name.replace(ACCOUNT_PREFIXES.COMMODITY, '');
 				const pricing = this.plugin.settings.commodityPrices[commodityName];
 				if (pricing) {
 					sum = sum * pricing.value;
+
+					// Convert currency if needed
+					if (pricing.currency !== this.plugin.settings.currencySymbol) {
+						if (pricing.currency === '$' && this.plugin.settings.currencySymbol === '₹') {
+							sum = sum * this.plugin.settings.usdToInr;
+						} else if (pricing.currency === '₹' && this.plugin.settings.currencySymbol === '$') {
+							sum = sum / this.plugin.settings.usdToInr;
+						}
+					}
 				}
 			}
 
@@ -475,6 +484,20 @@ export class TransactionTableView extends BasesView {
 		return Math.abs(sum) < 0.01;
 	}
 
+	private hasCommodity(entry: any, accountProps: string[]): boolean {
+		for (const prop of accountProps) {
+			// @ts-ignore
+			const { name } = parsePropertyId(prop);
+			if (name.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
+				// @ts-ignore
+				const value = entry.getValue(prop);
+				// @ts-ignore
+				if (value && value.data) return true;
+			}
+		}
+		return false;
+	}
+
 	public onDataUpdated(): void {
 		this.containerEl.empty();
 		this.addStyles();
@@ -523,7 +546,20 @@ export class TransactionTableView extends BasesView {
 		for (const prop of accountProps) {
 			// @ts-ignore
 			const { name } = parsePropertyId(prop);
-			headerRow.createEl('th', { text: name });
+			const th = headerRow.createEl('th', { text: name });
+
+			// Add color class based on category
+			if (name.startsWith(ACCOUNT_PREFIXES.ASSET)) {
+				th.addClass('col-asset');
+			} else if (name.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
+				th.addClass('col-commodity');
+			} else if (name.startsWith(ACCOUNT_PREFIXES.LIABILITY)) {
+				th.addClass('col-liability');
+			} else if (name.startsWith(ACCOUNT_PREFIXES.EXPENSE)) {
+				th.addClass('col-expense');
+			} else if (name.startsWith(ACCOUNT_PREFIXES.INCOME)) {
+				th.addClass('col-income');
+			}
 		}
 
 		// Create summary row
@@ -548,9 +584,9 @@ export class TransactionTableView extends BasesView {
 			}
 		}
 
-		// Create data rows (limit to top 10 for display)
+		// Create data rows (limit based on settings)
 		const entries = this.data.data || [];
-		const entriesToDisplay = entries.slice(0, 10);
+		const entriesToDisplay = entries.slice(0, this.plugin.settings.tableRowsToShow);
 		for (const entry of entriesToDisplay) {
 			const row = tbody.createEl('tr');
 
@@ -586,21 +622,43 @@ export class TransactionTableView extends BasesView {
 				// @ts-ignore
 				if (commentValue && commentValue.data) {
 					// @ts-ignore
-					commentCell.textContent = commentValue.data;
+					const text = commentValue.data.toString();
+					commentCell.textContent = text.length > 100 ? text.substring(0, 100) + '...' : text;
 				}
 			}
 
 			// Validation column
 			const validCell = row.createEl('td', { cls: 'validation-cell' });
-			const isValid = this.validateTransaction(entry, accountProps);
-			validCell.textContent = isValid ? '✓' : '✗';
-			validCell.addClass(isValid ? 'valid' : 'invalid');
+			const hasCommodity = this.hasCommodity(entry, accountProps);
+
+			if (hasCommodity) {
+				validCell.textContent = '⚠';
+				validCell.addClass('warning');
+			} else {
+				const isValid = this.validateTransaction(entry, accountProps);
+				validCell.textContent = isValid ? '✓' : '✗';
+				validCell.addClass(isValid ? 'valid' : 'invalid');
+			}
 
 			// Account columns
 			for (const prop of accountProps) {
 				const cell = row.createEl('td');
 				// @ts-ignore
 				const { name } = parsePropertyId(prop);
+
+				// Add color class based on category
+				if (name.startsWith(ACCOUNT_PREFIXES.ASSET)) {
+					cell.addClass('col-asset');
+				} else if (name.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
+					cell.addClass('col-commodity');
+				} else if (name.startsWith(ACCOUNT_PREFIXES.LIABILITY)) {
+					cell.addClass('col-liability');
+				} else if (name.startsWith(ACCOUNT_PREFIXES.EXPENSE)) {
+					cell.addClass('col-expense');
+				} else if (name.startsWith(ACCOUNT_PREFIXES.INCOME)) {
+					cell.addClass('col-income');
+				}
+
 				// @ts-ignore
 				const value = entry.getValue(prop);
 				// @ts-ignore
@@ -699,9 +757,38 @@ export class TransactionTableView extends BasesView {
 			}
 
 			.validation-cell.invalid {
-				color: #ef4444;
-			}
-		`;
+			color: #ef4444;
+		}
+
+		.validation-cell.warning {
+			color: #f59e0b;
+		}
+
+		.transaction-table th,
+		.transaction-table td {
+			min-width: 100px;
+		}
+
+		.col-asset {
+			background-color: rgba(16, 185, 129, 0.1);
+		}
+
+		.col-commodity {
+			background-color: rgba(251, 191, 36, 0.1);
+		}
+
+		.col-liability {
+			background-color: rgba(239, 68, 68, 0.1);
+		}
+
+		.col-expense {
+			background-color: rgba(239, 68, 68, 0.1);
+		}
+
+		.col-income {
+			background-color: rgba(16, 185, 129, 0.1);
+		}
+	`;
 		document.head.appendChild(style);
 	}
 }
