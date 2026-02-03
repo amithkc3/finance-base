@@ -2,10 +2,11 @@ import { App, PluginSettingTab, Setting } from "obsidian";
 import PersonalFinancePlugin from "./main";
 
 export interface FinancePluginSettings {
-	// Future settings can be added here
+	currencySymbol: '₹' | '$';
 }
 
 export const DEFAULT_SETTINGS: FinancePluginSettings = {
+	currencySymbol: '₹'
 }
 
 export class FinanceSettingTab extends PluginSettingTab {
@@ -19,7 +20,19 @@ export class FinanceSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+
 		containerEl.createEl('h2', { text: 'Personal Finance Settings' });
-		containerEl.createEl('p', { text: 'Settings for the finance dashboard plugin.' });
+
+		new Setting(containerEl)
+			.setName('Currency Symbol')
+			.setDesc('Select the currency symbol to use throughout the plugin')
+			.addDropdown(dropdown => dropdown
+				.addOption('₹', '₹ (Rupee)')
+				.addOption('$', '$ (Dollar)')
+				.setValue(this.plugin.settings.currencySymbol)
+				.onChange(async (value: '₹' | '$') => {
+					this.plugin.settings.currencySymbol = value;
+					await this.plugin.saveSettings();
+				}));
 	}
 }

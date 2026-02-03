@@ -1,8 +1,17 @@
 import { App, Plugin, BasesView, parsePropertyId } from 'obsidian';
 import { DEFAULT_SETTINGS, FinancePluginSettings, FinanceSettingTab } from "./settings";
-import { createPieChart, formatAccountName, formatCurrency } from "./utils/charts";
+import { createPieChart, formatCurrency } from "./utils/charts";
 
 export const FinanceDashboardViewType = 'finance-dashboard';
+
+// Strict account prefix definitions
+const ACCOUNT_PREFIXES = {
+	ASSET: 'Asset-',
+	LIABILITY: 'Liability-',
+	EXPENSE: 'Expense-',
+	INCOME: 'Income-',
+	COMMODITY: 'Commodity-'
+} as const;
 
 export default class PersonalFinancePlugin extends Plugin {
 	settings: FinancePluginSettings;
@@ -15,7 +24,7 @@ export default class PersonalFinancePlugin extends Plugin {
 			name: 'Finance Dashboard',
 			icon: 'lucide-wallet',
 			factory: (controller: any, containerEl: HTMLElement) => {
-				return new FinanceDashboardView(controller, containerEl) as any
+				return new FinanceDashboardView(controller, containerEl, this) as any
 			},
 			options: () => ([]),
 		});
@@ -25,7 +34,7 @@ export default class PersonalFinancePlugin extends Plugin {
 			name: 'Transaction Table',
 			icon: 'lucide-table',
 			factory: (controller: any, containerEl: HTMLElement) => {
-				return new TransactionTableView(controller, containerEl) as any
+				return new TransactionTableView(controller, containerEl, this) as any
 			},
 			options: () => ([]),
 		});
@@ -52,6 +61,23 @@ interface AccountCategory {
 	expenses: Map<string, number>;
 }
 
+function categorizeProperty(name: string): keyof AccountCategory | null {
+	if (name.startsWith(ACCOUNT_PREFIXES.ASSET) || name.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
+		return 'assets';
+	} else if (name.startsWith(ACCOUNT_PREFIXES.LIABILITY)) {
+		return 'liabilities';
+	} else if (name.startsWith(ACCOUNT_PREFIXES.INCOME)) {
+		return 'income';
+	} else if (name.startsWith(ACCOUNT_PREFIXES.EXPENSE)) {
+		return 'expenses';
+	}
+	return null;
+}
+
+function isAccountProperty(name: string): boolean {
+	return categorizeProperty(name) !== null;
+}
+
 // @ts-ignore
 export class FinanceDashboardView extends BasesView {
 	readonly type = FinanceDashboardViewType;
@@ -61,12 +87,13 @@ export class FinanceDashboardView extends BasesView {
 	public config: any;
 	public data: any;
 	private controller: any;
+	private plugin: PersonalFinancePlugin;
 
-	constructor(controller: any, parentEl: HTMLElement) {
+	constructor(controller: any, parentEl: HTMLElement, plugin: PersonalFinancePlugin) {
 		super(controller);
 		this.controller = controller;
+		this.plugin = plugin;
 		this.containerEl = parentEl.createDiv('bases-finance-dashboard');
-		console.log(this);
 	}
 
 	private categorizeAccounts(): AccountCategory {
@@ -85,6 +112,10 @@ export class FinanceDashboardView extends BasesView {
 			// @ts-ignore
 			const { type, name } = parsePropertyId(prop);
 			if (type !== 'note') continue;
+
+			const category = categorizeProperty(name);
+			if (!category) continue;
+
 			// Use optimized getSummaryValue API
 			// @ts-ignore
 			const summaryValue = this.data.getSummaryValue(this.controller, this.data.data, prop, 'Sum');
@@ -93,18 +124,7 @@ export class FinanceDashboardView extends BasesView {
 
 			// @ts-ignore
 			const sum = summaryValue.data;
-
-			// Categorize by prefix
-			const lowerName = name.toLowerCase();
-			if (lowerName.startsWith('asset')) {
-				categories.assets.set(name, sum);
-			} else if (lowerName.startsWith('liabilit')) {
-				categories.liabilities.set(name, sum);
-			} else if (lowerName.startsWith('income')) {
-				categories.income.set(name, sum);
-			} else if (lowerName.startsWith('expense')) {
-				categories.expenses.set(name, sum);
-			}
+			categories[category].set(name, sum);
 		}
 
 		return categories;
@@ -137,18 +157,18 @@ export class FinanceDashboardView extends BasesView {
 		card.createEl('h2', { text: 'Net Worth' });
 
 		const amount = card.createDiv('net-worth-amount');
-		amount.textContent = formatCurrency(netWorth);
+		amount.textContent = formatCurrency(netWorth, this.plugin.settings.currencySymbol);
 		amount.className = netWorth >= 0 ? 'positive' : 'negative';
 
 		const breakdown = card.createDiv('net-worth-breakdown');
 
 		const assetsRow = breakdown.createDiv('breakdown-row');
 		assetsRow.createSpan({ text: 'Assets', cls: 'breakdown-label' });
-		assetsRow.createSpan({ text: formatCurrency(assets), cls: 'breakdown-value positive' });
+		assetsRow.createSpan({ text: formatCurrency(assets, this.plugin.settings.currencySymbol), cls: 'breakdown-value positive' });
 
 		const liabilitiesRow = breakdown.createDiv('breakdown-row');
 		liabilitiesRow.createSpan({ text: 'Liabilities', cls: 'breakdown-label' });
-		liabilitiesRow.createSpan({ text: formatCurrency(liabilities), cls: 'breakdown-value negative' });
+		liabilitiesRow.createSpan({ text: formatCurrency(liabilities, this.plugin.settings.currencySymbol), cls: 'breakdown-value negative' });
 	}
 
 	private createAccountBreakdown(categories: AccountCategory): void {
@@ -163,8 +183,8 @@ export class FinanceDashboardView extends BasesView {
 				.sort((a, b) => b[1] - a[1])
 				.forEach(([name, value]) => {
 					const row = assetsCol.createDiv('account-row');
-					row.createSpan({ text: formatAccountName(name), cls: 'account-name' });
-					row.createSpan({ text: formatCurrency(value), cls: 'account-value positive' });
+					row.createSpan({ text: name, cls: 'account-name' });
+					row.createSpan({ text: formatCurrency(value, this.plugin.settings.currencySymbol), cls: 'account-value positive' });
 				});
 		}
 
@@ -177,8 +197,8 @@ export class FinanceDashboardView extends BasesView {
 				.sort((a, b) => a[1] - b[1])
 				.forEach(([name, value]) => {
 					const row = liabilitiesCol.createDiv('account-row');
-					row.createSpan({ text: formatAccountName(name), cls: 'account-name' });
-					row.createSpan({ text: formatCurrency(value), cls: 'account-value negative' });
+					row.createSpan({ text: name, cls: 'account-name' });
+					row.createSpan({ text: formatCurrency(value, this.plugin.settings.currencySymbol), cls: 'account-value negative' });
 				});
 		}
 
@@ -191,8 +211,8 @@ export class FinanceDashboardView extends BasesView {
 				.sort((a, b) => a[1] - b[1])
 				.forEach(([name, value]) => {
 					const row = incomeCol.createDiv('account-row');
-					row.createSpan({ text: formatAccountName(name), cls: 'account-name' });
-					row.createSpan({ text: formatCurrency(value), cls: 'account-value' });
+					row.createSpan({ text: name, cls: 'account-name' });
+					row.createSpan({ text: formatCurrency(value, this.plugin.settings.currencySymbol), cls: 'account-value' });
 				});
 		}
 
@@ -205,8 +225,8 @@ export class FinanceDashboardView extends BasesView {
 				.sort((a, b) => b[1] - a[1])
 				.forEach(([name, value]) => {
 					const row = expensesCol.createDiv('account-row');
-					row.createSpan({ text: formatAccountName(name), cls: 'account-name' });
-					row.createSpan({ text: formatCurrency(value), cls: 'account-value' });
+					row.createSpan({ text: name, cls: 'account-name' });
+					row.createSpan({ text: formatCurrency(value, this.plugin.settings.currencySymbol), cls: 'account-value' });
 				});
 		}
 	}
@@ -219,7 +239,7 @@ export class FinanceDashboardView extends BasesView {
 			const assetChartDiv = chartsContainer.createDiv('chart-wrapper');
 			assetChartDiv.createEl('h3', { text: 'Asset Distribution' });
 			const canvas = assetChartDiv.createEl('canvas');
-			createPieChart(canvas, categories.assets, 'assets');
+			createPieChart(canvas, categories.assets, 'assets', this.plugin.settings.currencySymbol);
 		}
 
 		// Expense Distribution Chart
@@ -227,7 +247,7 @@ export class FinanceDashboardView extends BasesView {
 			const expenseChartDiv = chartsContainer.createDiv('chart-wrapper');
 			expenseChartDiv.createEl('h3', { text: 'Expense Distribution' });
 			const canvas = expenseChartDiv.createEl('canvas');
-			createPieChart(canvas, categories.expenses, 'expenses');
+			createPieChart(canvas, categories.expenses, 'expenses', this.plugin.settings.currencySymbol);
 		}
 	}
 
@@ -400,11 +420,30 @@ export class TransactionTableView extends BasesView {
 	public config: any;
 	public data: any;
 	private controller: any;
+	private plugin: PersonalFinancePlugin;
 
-	constructor(controller: any, parentEl: HTMLElement) {
+	constructor(controller: any, parentEl: HTMLElement, plugin: PersonalFinancePlugin) {
 		super(controller);
 		this.controller = controller;
+		this.plugin = plugin;
 		this.containerEl = parentEl.createDiv('transaction-table-container');
+	}
+
+	private validateTransaction(entry: any, accountProps: string[]): boolean {
+		let sum = 0;
+
+		for (const prop of accountProps) {
+			// @ts-ignore
+			const value = entry.getValue(prop);
+			// @ts-ignore
+			if (value && value.data && typeof value.data === 'number') {
+				// @ts-ignore
+				sum += value.data;
+			}
+		}
+
+		// Allow small floating point tolerance
+		return Math.abs(sum) < 0.01;
 	}
 
 	public onDataUpdated(): void {
@@ -426,13 +465,11 @@ export class TransactionTableView extends BasesView {
 			const { type, name } = parsePropertyId(prop);
 			if (type !== 'note') continue;
 
-			const lowerName = name.toLowerCase();
-			if (lowerName.startsWith('asset') || lowerName.startsWith('liabilit') ||
-				lowerName.startsWith('income') || lowerName.startsWith('expense')) {
+			if (isAccountProperty(name)) {
 				accountProps.push(prop);
-			} else if (lowerName === 'date') {
+			} else if (name.toLowerCase() === 'date') {
 				otherProps.date = prop;
-			} else if (lowerName === 'comment') {
+			} else if (name.toLowerCase() === 'comment') {
 				otherProps.comment = prop;
 			}
 		}
@@ -449,11 +486,12 @@ export class TransactionTableView extends BasesView {
 		if (otherProps.comment) {
 			headerRow.createEl('th', { text: 'Comment' });
 		}
+		headerRow.createEl('th', { text: 'Valid' });
 
 		for (const prop of accountProps) {
 			// @ts-ignore
 			const { name } = parsePropertyId(prop);
-			headerRow.createEl('th', { text: formatAccountName(name) });
+			headerRow.createEl('th', { text: name });
 		}
 
 		// Create summary row
@@ -463,6 +501,7 @@ export class TransactionTableView extends BasesView {
 		if (otherProps.comment) {
 			summaryRow.createEl('td', { text: '' });
 		}
+		summaryRow.createEl('td', { text: '' });
 
 		for (const prop of accountProps) {
 			// @ts-ignore
@@ -471,7 +510,7 @@ export class TransactionTableView extends BasesView {
 			// @ts-ignore
 			if (summaryValue && summaryValue.data && typeof summaryValue.data === 'number') {
 				// @ts-ignore
-				td.textContent = formatCurrency(summaryValue.data);
+				td.textContent = formatCurrency(summaryValue.data, this.plugin.settings.currencySymbol);
 			} else {
 				td.textContent = '-';
 			}
@@ -518,6 +557,12 @@ export class TransactionTableView extends BasesView {
 				}
 			}
 
+			// Validation column
+			const validCell = row.createEl('td', { cls: 'validation-cell' });
+			const isValid = this.validateTransaction(entry, accountProps);
+			validCell.textContent = isValid ? '✓' : '✗';
+			validCell.addClass(isValid ? 'valid' : 'invalid');
+
 			// Account columns
 			for (const prop of accountProps) {
 				const cell = row.createEl('td');
@@ -526,7 +571,7 @@ export class TransactionTableView extends BasesView {
 				// @ts-ignore
 				if (value && value.data && typeof value.data === 'number') {
 					// @ts-ignore
-					cell.textContent = formatCurrency(value.data);
+					cell.textContent = formatCurrency(value.data, this.plugin.settings.currencySymbol);
 				} else {
 					cell.textContent = '-';
 				}
@@ -600,6 +645,20 @@ export class TransactionTableView extends BasesView {
 
 			.file-link:hover {
 				text-decoration: underline;
+			}
+
+			.validation-cell {
+				text-align: center;
+				font-size: 18px;
+				font-weight: 700;
+			}
+
+			.validation-cell.valid {
+				color: #10b981;
+			}
+
+			.validation-cell.invalid {
+				color: #ef4444;
 			}
 		`;
 		document.head.appendChild(style);

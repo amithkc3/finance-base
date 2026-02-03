@@ -3,9 +3,10 @@ import { Chart, ChartConfiguration } from 'chart.js/auto';
 export function createPieChart(
     canvas: HTMLCanvasElement,
     data: Map<string, number>,
-    type: 'assets' | 'expenses' | 'liabilities' | 'income'
+    type: 'assets' | 'expenses' | 'liabilities' | 'income',
+    currencySymbol: string
 ): Chart {
-    const labels = Array.from(data.keys()).map(name => formatAccountName(name));
+    const labels = Array.from(data.keys());
     const values = Array.from(data.values()).map(v => Math.abs(v));
     const colors = generateColors(data.size);
 
@@ -38,7 +39,7 @@ export function createPieChart(
                     callbacks: {
                         label: (context: any) => {
                             const label = context.label || '';
-                            const value = formatCurrency(context.parsed);
+                            const value = formatCurrency(context.parsed, currencySymbol);
                             return `${label}: ${value}`;
                         }
                     }
@@ -58,19 +59,11 @@ export function generateColors(count: number): string[] {
     return colors.slice(0, count);
 }
 
-export function formatAccountName(name: string): string {
-    return name
-        .replace(/^(assets?|liabilities?|income|expenses?)_?/i, '')
-        .replace(/[._]/g, ' ')
-        .split(' ')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-        .join(' ');
-}
+export function formatCurrency(amount: number, currencySymbol: string = '₹'): string {
+    const formatted = new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(Math.abs(amount));
 
-export function formatCurrency(amount: number): string {
-    return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        minimumFractionDigits: 2
-    }).format(amount);
+    return `${currencySymbol}${formatted}`;
 }
