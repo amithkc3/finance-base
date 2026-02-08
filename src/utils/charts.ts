@@ -3,6 +3,13 @@ import { Chart, ChartConfiguration, Colors } from 'chart.js/auto';
 // Register the Colors plugin for default color palette
 Chart.register(Colors);
 
+// Helper to resolve CSS variables
+function resolveColor(variable: string): string {
+    const value = getComputedStyle(document.body).getPropertyValue(variable).trim();
+    // If variable not found/empty, return a reasonable default based on common Obsidian themes or fallback to gray
+    return value && value.length > 0 ? value : '#888888';
+}
+
 export function createPieChart(
     canvas: HTMLCanvasElement,
     data: Map<string, number>,
@@ -28,6 +35,9 @@ export function createPieChart(
         '#d946ef', // fuchsia
     ];
 
+    const textColor = resolveColor('--text-normal');
+    const borderColor = resolveColor('--background-secondary');
+
     const config: ChartConfiguration = {
         type: 'doughnut',
         data: {
@@ -36,7 +46,7 @@ export function createPieChart(
                 data: values,
                 backgroundColor: colors,
                 borderWidth: 2,
-                borderColor: '#ffffff'
+                borderColor: borderColor // Use background color for gaps
             }]
         },
         options: {
@@ -46,7 +56,7 @@ export function createPieChart(
                 legend: {
                     position: 'bottom',
                     labels: {
-                        color: 'var(--text-normal)',
+                        color: textColor,
                         padding: 6,
                         font: {
                             size: 10
@@ -101,6 +111,11 @@ export function createNetWorthLineChart(
     const assetsData = sortedSnapshots.map(s => s.assets);
     const liabilitiesData = sortedSnapshots.map(s => s.liabilities);
 
+    const textColor = resolveColor('--text-muted');
+    const gridColor = resolveColor('--background-modifier-border');
+    // Using hex directly for lines to ensure visibility/consistency across themes, referencing newly added CSS var could be an option but these standard colors work well
+    const labelColor = resolveColor('--text-normal');
+
     const config: ChartConfiguration = {
         type: 'line',
         data: {
@@ -152,7 +167,7 @@ export function createNetWorthLineChart(
                 legend: {
                     position: 'top',
                     labels: {
-                        color: 'var(--text-normal)',
+                        color: labelColor,
                         padding: 15,
                         font: {
                             size: 13,
@@ -176,23 +191,23 @@ export function createNetWorthLineChart(
                 y: {
                     beginAtZero: false,
                     ticks: {
-                        color: 'var(--text-muted)',
+                        color: textColor,
                         callback: function (value: any) {
                             return formatCurrency(value, currencySymbol);
                         }
                     },
                     grid: {
-                        color: 'var(--background-modifier-border)'
+                        color: gridColor
                     }
                 },
                 x: {
                     ticks: {
-                        color: 'var(--text-muted)',
+                        color: textColor,
                         maxRotation: 45,
                         minRotation: 45
                     },
                     grid: {
-                        color: 'var(--background-modifier-border)'
+                        color: gridColor
                     }
                 }
             }

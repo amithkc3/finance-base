@@ -597,6 +597,16 @@ export class FinanceDashboardView extends BasesView {
 			const row = listContainer.createDiv('account-row');
 			row.addClass(colorClass);
 
+			// Determine value styling class based on category type
+			let valueClass = 'account-value';
+			if (type === 'expenses') {
+				valueClass += ' negative';
+			} else if (type === 'income') {
+				valueClass += ' positive';
+			} else {
+				valueClass += value >= 0 ? ' positive' : ' negative';
+			}
+
 			// For commodities, show units
 			if (name.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
 				row.removeClass(colorClass);
@@ -626,7 +636,7 @@ export class FinanceDashboardView extends BasesView {
 
 				const valueSpan = row.createSpan({
 					text: formatCurrency(value, this.plugin.settings.currencySymbol),
-					cls: value >= 0 ? 'account-value positive' : 'account-value negative'
+					cls: valueClass
 				});
 
 				if (pricing) {
@@ -645,7 +655,7 @@ export class FinanceDashboardView extends BasesView {
 				row.createSpan({ text: name, cls: 'account-name' });
 				row.createSpan({
 					text: formatCurrency(value, this.plugin.settings.currencySymbol),
-					cls: value >= 0 ? 'account-value positive' : 'account-value negative'
+					cls: valueClass
 				});
 			}
 		});
@@ -799,6 +809,12 @@ export class FinanceDashboardView extends BasesView {
 		const style = document.createElement('style');
 		style.id = 'finance-dashboard-styles';
 		style.textContent = `
+			:root {
+				--finance-bright-blue: #3b82f6;
+				--finance-positive: #10b981;
+				--finance-negative: #ef4444;
+			}
+
 			.finance-dashboard-container {
 				padding: 20px;
 				font-family: var(--font-interface);
@@ -849,8 +865,8 @@ export class FinanceDashboardView extends BasesView {
 				font-size: 48px;
 				font-weight: 800;
 				font-family: var(--font-monospace);
-				color: #8b5cf6;
-				text-shadow: 0 2px 12px rgba(139, 92, 246, 0.3);
+				color: var(--finance-bright-blue);
+				text-shadow: 0 2px 12px rgba(59, 130, 246, 0.3);
 				margin: 0;
 			}
 
@@ -866,7 +882,7 @@ export class FinanceDashboardView extends BasesView {
 				color: var(--text-on-accent);
 				border: none;
 				border-radius: 8px;
-				padding: 12px 24px;
+				padding: 8px 16px;
 				font-size: 13px;
 				font-weight: 600;
 				cursor: pointer;
@@ -1038,7 +1054,7 @@ export class FinanceDashboardView extends BasesView {
 			.category-sum {
 				font-size: 18px;
 				font-weight: 700;
-				color: var(--text-accent);
+				color: var(--finance-bright-blue);
 				font-family: var(--font-monospace);
 			}
 
