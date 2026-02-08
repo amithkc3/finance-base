@@ -1,4 +1,7 @@
-import { Chart, ChartConfiguration } from 'chart.js/auto';
+import { Chart, ChartConfiguration, Colors } from 'chart.js/auto';
+
+// Register the Colors plugin for default color palette
+Chart.register(Colors);
 
 export function createPieChart(
     canvas: HTMLCanvasElement,
@@ -8,17 +11,32 @@ export function createPieChart(
 ): Chart {
     const labels = Array.from(data.keys());
     const values = Array.from(data.values()).map(v => Math.abs(v));
-    const colors = generateColors(data.size);
+
+    // High-contrast, distinguishable color palette
+    const colors = [
+        '#3b82f6', // bright blue
+        '#ef4444', // bright red
+        '#10b981', // emerald green
+        '#f59e0b', // amber
+        '#8b5cf6', // violet
+        '#ec4899', // pink
+        '#14b8a6', // teal
+        '#f97316', // orange
+        '#6366f1', // indigo
+        '#84cc16', // lime
+        '#06b6d4', // cyan
+        '#d946ef', // fuchsia
+    ];
 
     const config: ChartConfiguration = {
-        type: 'pie',
+        type: 'doughnut',
         data: {
             labels: labels,
             datasets: [{
                 data: values,
                 backgroundColor: colors,
                 borderWidth: 2,
-                borderColor: '#1e1e1e'
+                borderColor: '#ffffff'
             }]
         },
         options: {
@@ -29,10 +47,12 @@ export function createPieChart(
                     position: 'bottom',
                     labels: {
                         color: 'var(--text-normal)',
-                        padding: 10,
+                        padding: 6,
                         font: {
-                            size: 12
-                        }
+                            size: 10
+                        },
+                        boxWidth: 10,
+                        boxHeight: 10
                     }
                 },
                 tooltip: {
@@ -51,13 +71,6 @@ export function createPieChart(
     return new Chart(canvas, config);
 }
 
-export function generateColors(count: number): string[] {
-    const colors = [
-        '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
-        '#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384'
-    ];
-    return colors.slice(0, count);
-}
 
 export function formatCurrency(amount: number, currencySymbol: string = '₹'): string {
     const formatted = new Intl.NumberFormat('en-US', {

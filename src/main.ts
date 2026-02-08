@@ -319,32 +319,53 @@ export class FinanceDashboardView extends BasesView {
 		const totalExpenses = Array.from(categories.expenses.values()).reduce((a, b) => a + b, 0);
 		const netWorth = totalAssets + totalLiabilities; // liabilities are negative
 
-		// Create dashboard components
-		this.createNetWorthCard(netWorth, totalAssets, totalLiabilities);
-		this.createAccountBreakdown(categories);
-		this.createCharts(categories);
+		// Create dashboard components in new layout order
+		// Row 1: Compact Net Worth + Actions
+		this.createTopRow(netWorth, categories);
+
+		// Row 2: Net Worth Line Chart (full width)
 		this.createNetWorthChart();
-		this.createSnapshotButton(categories);
+
+		// Row 3 & 4: Category blocks with integrated pie charts
+		this.createCategoryBlocks(categories);
 	}
 
-	private createNetWorthCard(netWorth: number, assets: number, liabilities: number): void {
-		const card = this.containerEl.createDiv('dashboard-card net-worth-card');
+	private createTopRow(netWorth: number, categories: AccountCategory): void {
+		const topRow = this.containerEl.createDiv('dashboard-top-row');
 
-		card.createEl('h2', { text: 'Net Worth' });
-
-		const amount = card.createDiv('net-worth-amount');
+		// Compact Net Worth Card
+		const netWorthCard = topRow.createDiv('compact-net-worth-card');
+		netWorthCard.createEl('h3', { text: 'Net Worth' });
+		const amount = netWorthCard.createDiv('compact-net-worth-amount');
 		amount.textContent = formatCurrency(netWorth, this.plugin.settings.currencySymbol);
 		amount.className = netWorth >= 0 ? 'positive' : 'negative';
 
-		const breakdown = card.createDiv('net-worth-breakdown');
+		// Actions Block
+		const actionsBlock = topRow.createDiv('actions-block');
+		actionsBlock.createEl('h3', { text: 'Actions' });
+		const actionsContainer = actionsBlock.createDiv('actions-container');
 
-		const assetsRow = breakdown.createDiv('breakdown-row');
-		assetsRow.createSpan({ text: 'Assets', cls: 'breakdown-label' });
-		assetsRow.createSpan({ text: formatCurrency(assets, this.plugin.settings.currencySymbol), cls: 'breakdown-value positive' });
+		// Snapshot button
+		const snapshotBtn = actionsContainer.createEl('button', {
+			text: 'Create Snapshot',
+			cls: 'action-button'
+		});
+		snapshotBtn.addEventListener('click', async () => {
+			await this.createSnapshot(categories);
+		});
 
-		const liabilitiesRow = breakdown.createDiv('breakdown-row');
-		liabilitiesRow.createSpan({ text: 'Liabilities', cls: 'breakdown-label' });
-		liabilitiesRow.createSpan({ text: formatCurrency(liabilities, this.plugin.settings.currencySymbol), cls: 'breakdown-value negative' });
+		// Placeholder buttons for future actions
+		const placeholder1 = actionsContainer.createEl('button', {
+			text: 'Action 2',
+			cls: 'action-button action-placeholder'
+		});
+		placeholder1.disabled = true;
+
+		const placeholder2 = actionsContainer.createEl('button', {
+			text: 'Action 3',
+			cls: 'action-button action-placeholder'
+		});
+		placeholder2.disabled = true;
 	}
 
 	private createAccountBreakdown(categories: AccountCategory): void {
@@ -496,6 +517,144 @@ export class FinanceDashboardView extends BasesView {
 			const canvas = expenseChartDiv.createEl('canvas');
 			createPieChart(canvas, categories.expenses, 'expenses', this.plugin.settings.currencySymbol);
 		}
+	}
+
+	private createCategoryBlocks(categories: AccountCategory): void {
+		// Row 3: Assets and Liabilities
+		const topCategoriesRow = this.containerEl.createDiv('category-blocks-row');
+
+		// Assets Block
+		if (categories.assets.size > 0) {
+			this.createCategoryBlock(
+				topCategoriesRow,
+				'Assets',
+				categories.assets,
+				'assets',
+				'col-asset'
+			);
+		}
+
+		// Liabilities Block
+		if (categories.liabilities.size > 0) {
+			this.createCategoryBlock(
+				topCategoriesRow,
+				'Liabilities',
+				categories.liabilities,
+				'liabilities',
+				'col-liability'
+			);
+		}
+
+		// Row 4: Income and Expenses
+		const bottomCategoriesRow = this.containerEl.createDiv('category-blocks-row');
+
+		// Income Block
+		if (categories.income.size > 0) {
+			this.createCategoryBlock(
+				bottomCategoriesRow,
+				'Income',
+				categories.income,
+				'income',
+				'col-income'
+			);
+		}
+
+		// Expenses Block
+		if (categories.expenses.size > 0) {
+			this.createCategoryBlock(
+				bottomCategoriesRow,
+				'Expenses',
+				categories.expenses,
+				'expenses',
+				'col-expense'
+			);
+		}
+	}
+
+	private createCategoryBlock(
+		container: HTMLElement,
+		title: string,
+		data: Map<string, number>,
+		type: 'assets' | 'expenses' | 'liabilities' | 'income',
+		colorClass: string
+	): void {
+		const block = container.createDiv('category-block');
+
+		// Header with title and total
+		const total = Array.from(data.values()).reduce((sum, val) => sum + val, 0);
+		const header = block.createDiv('category-block-header');
+		header.createEl('h3', { text: title.toUpperCase() });
+		const totalSpan = header.createSpan({ cls: 'category-total' });
+		totalSpan.textContent = formatCurrency(total, this.plugin.settings.currencySymbol);
+
+		// Pie chart
+		const chartContainer = block.createDiv('category-chart-container');
+		const canvas = chartContainer.createEl('canvas');
+		createPieChart(canvas, data, type, this.plugin.settings.currencySymbol);
+
+		// Account breakdown list
+		const listContainer = block.createDiv('category-list-container');
+		const entries = Array.from(data.entries()).sort((a, b) => {
+			// Sort by absolute value descending
+			return Math.abs(b[1]) - Math.abs(a[1]);
+		});
+
+		entries.forEach(([name, value]) => {
+			const row = listContainer.createDiv('account-row');
+			row.addClass(colorClass);
+
+			// For commodities, show units
+			if (name.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
+				row.removeClass(colorClass);
+				row.addClass('col-commodity');
+
+				const commodityName = name.replace(ACCOUNT_PREFIXES.COMMODITY, '');
+				const pricing = this.plugin.settings.commodityPrices[commodityName];
+
+				let units = 0;
+				if (pricing) {
+					let pricePerUnit = pricing.value;
+					if (pricing.currency !== this.plugin.settings.currencySymbol) {
+						if (pricing.currency === '$' && this.plugin.settings.currencySymbol === '₹') {
+							pricePerUnit = pricePerUnit * this.plugin.settings.usdToInr;
+						} else if (pricing.currency === '₹' && this.plugin.settings.currencySymbol === '$') {
+							pricePerUnit = pricePerUnit / this.plugin.settings.usdToInr;
+						}
+					}
+					units = value / pricePerUnit;
+				}
+
+				const nameDiv = row.createDiv({ cls: 'account-name-container' });
+				nameDiv.createSpan({ text: name, cls: 'account-name' });
+				if (units > 0) {
+					nameDiv.createSpan({ text: ` (${units.toFixed(2)} units)`, cls: 'commodity-units' });
+				}
+
+				const valueSpan = row.createSpan({
+					text: formatCurrency(value, this.plugin.settings.currencySymbol),
+					cls: value >= 0 ? 'account-value positive' : 'account-value negative'
+				});
+
+				if (pricing) {
+					const formulaDiv = row.createDiv({ cls: 'commodity-formula' });
+					if (pricing.currency !== this.plugin.settings.currencySymbol) {
+						formulaDiv.textContent = `${units.toFixed(2)} units × ${pricing.value} ${pricing.currency}/unit × ${this.plugin.settings.usdToInr} ${this.plugin.settings.currencySymbol}/${pricing.currency}`;
+					} else {
+						formulaDiv.textContent = `${units.toFixed(2)} units × ${pricing.value} ${pricing.currency}/unit`;
+					}
+				} else {
+					const debugDiv = row.createDiv({ cls: 'commodity-formula' });
+					debugDiv.textContent = `⚠ Pricing not configured for "${commodityName}"`;
+					debugDiv.style.color = 'var(--text-error)';
+				}
+			} else {
+				row.createSpan({ text: name, cls: 'account-name' });
+				row.createSpan({
+					text: formatCurrency(value, this.plugin.settings.currencySymbol),
+					cls: value >= 0 ? 'account-value positive' : 'account-value negative'
+				});
+			}
+		});
 	}
 
 	private createSnapshotButton(categories: AccountCategory): void {
@@ -658,6 +817,150 @@ export class FinanceDashboardView extends BasesView {
 				margin-bottom: 20px;
 				box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 				border: 1px solid var(--background-modifier-border);
+			}
+
+			/* Top Row: Net Worth + Actions */
+			.dashboard-top-row {
+				display: grid;
+				grid-template-columns: 1fr 2fr;
+				gap: 20px;
+				margin-bottom: 20px;
+			}
+
+			.compact-net-worth-card {
+				background: var(--background-secondary);
+				border-radius: 12px;
+				padding: 20px;
+				border: 1px solid var(--background-modifier-border);
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+				align-items: center;
+			}
+
+			.compact-net-worth-card h3 {
+				margin: 0 0 12px 0;
+				font-size: 14px;
+				color: var(--text-muted);
+				text-transform: uppercase;
+				letter-spacing: 1px;
+			}
+
+			.compact-net-worth-amount {
+				font-size: 48px;
+				font-weight: 700;
+				font-family: var(--font-monospace);
+			}
+
+			.compact-net-worth-amount.positive {
+				color: #10b981;
+			}
+
+			.compact-net-worth-amount.negative {
+				color: #ef4444;
+			}
+
+			.actions-block {
+				background: var(--background-secondary);
+				border-radius: 12px;
+				padding: 20px;
+				border: 1px solid var(--background-modifier-border);
+			}
+
+			.actions-block h3 {
+				margin: 0 0 16px 0;
+				font-size: 14px;
+				color: var(--text-muted);
+				text-transform: uppercase;
+				letter-spacing: 1px;
+			}
+
+			.actions-container {
+				display: flex;
+				gap: 12px;
+				flex-wrap: wrap;
+			}
+
+			.action-button {
+				background: var(--interactive-accent);
+				color: var(--text-on-accent);
+				border: none;
+				border-radius: 8px;
+				padding: 10px 20px;
+				font-size: 14px;
+				font-weight: 600;
+				cursor: pointer;
+				transition: all 0.2s ease;
+				flex: 1;
+				min-width: 120px;
+			}
+
+			.action-button:hover:not(:disabled) {
+				background: var(--interactive-accent-hover);
+				transform: translateY(-1px);
+				box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+			}
+
+			.action-button:active:not(:disabled) {
+				transform: translateY(0);
+			}
+
+			.action-button.action-placeholder {
+				background: var(--background-modifier-border);
+				color: var(--text-muted);
+				cursor: not-allowed;
+				opacity: 0.5;
+			}
+
+			/* Category Blocks */
+			.category-blocks-row {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+				gap: 20px;
+				margin-bottom: 20px;
+			}
+
+			.category-block {
+				background: var(--background-secondary);
+				border-radius: 12px;
+				padding: 20px;
+				border: 1px solid var(--background-modifier-border);
+			}
+
+			.category-block-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				margin-bottom: 16px;
+				padding-bottom: 12px;
+				border-bottom: 2px solid var(--background-modifier-border);
+			}
+
+			.category-block-header h3 {
+				margin: 0;
+				font-size: 16px;
+				color: var(--text-muted);
+				letter-spacing: 1px;
+			}
+
+			.category-total {
+				font-size: 20px;
+				font-weight: 700;
+				color: var(--text-accent);
+				font-family: var(--font-monospace);
+			}
+
+			.category-chart-container {
+				margin-bottom: 20px;
+				padding: 10px;
+			}
+
+			.category-chart-container canvas {
+				max-height: 350px;
+			}
+
+			.category-list-container {
+				/* Removed max-height to show all accounts */
 			}
 
 			.net-worth-card h2 {
