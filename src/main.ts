@@ -1,4 +1,4 @@
-import { App, Plugin, BasesView, parsePropertyId, Modal, Notice, TFolder, TFile } from 'obsidian';
+import { App, Plugin, BasesView, parsePropertyId, Modal, Notice } from 'obsidian';
 import { DEFAULT_SETTINGS, FinancePluginSettings, FinanceSettingTab } from "./settings";
 import { createPieChart, formatCurrency } from "./utils/charts";
 
@@ -58,16 +58,7 @@ export default class PersonalFinancePlugin extends Plugin {
 			callback: () => new CommodityPricesModal(this.app, this).open()
 		});
 
-		this.addCommand({
-			id: 'create-snapshot',
-			name: 'Create Snapshot',
-			callback: async () => await this.createSnapshot()
-		});
-
 		this.addSettingTab(new FinanceSettingTab(this.app, this));
-	}
-
-	onunload() {
 	}
 
 	async loadSettings() {
@@ -78,70 +69,7 @@ export default class PersonalFinancePlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	async createSnapshot() {
-		try {
-			// Ensure snapshots folder exists
-			const folderPath = this.settings.snapshotsFolderPath;
-			const folder = this.app.vault.getAbstractFileByPath(folderPath);
 
-			if (!folder) {
-				await this.app.vault.createFolder(folderPath);
-			}
-
-			// Get all dashboard views to access categorized data
-			const dashboardView = this.app.workspace.getLeavesOfType(FinanceDashboardViewType)[0];
-			if (!dashboardView) {
-				new Notice('Please open Finance Dashboard view first');
-				return;
-			}
-
-			// @ts-ignore
-			const view = dashboardView.view as FinanceDashboardView;
-			const categories = view.categorizeAccounts();
-
-			// Create frontmatter with all accounts
-			const frontmatter: Record<string, number> = {};
-
-			for (const [name, value] of categories.assets) {
-				frontmatter[name] = value;
-			}
-			for (const [name, value] of categories.liabilities) {
-				frontmatter[name] = value;
-			}
-			for (const [name, value] of categories.income) {
-				frontmatter[name] = value;
-			}
-			for (const [name, value] of categories.expenses) {
-				frontmatter[name] = value;
-			}
-
-			// Add date
-			const now = new Date();
-			const dateStr = now.toISOString();
-
-			// Create file content
-			const yamlLines = ['---'];
-			for (const [key, value] of Object.entries(frontmatter)) {
-				yamlLines.push(`${key}: ${value}`);
-			}
-			yamlLines.push(`date: ${dateStr}`);
-			yamlLines.push('---');
-			yamlLines.push('');
-			yamlLines.push(`Snapshot taken at: ${now.toLocaleString()}`);
-
-			const content = yamlLines.join('\n');
-
-			// Create filename with timestamp
-			const filename = `snapshot-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}.md`;
-			const filepath = `${folderPath}/${filename}`;
-
-			await this.app.vault.create(filepath, content);
-			new Notice(`Snapshot created: ${filename}`);
-		} catch (error: any) {
-			new Notice(`Error creating snapshot: ${error.message}`);
-			console.error('Snapshot creation error:', error);
-		}
-	}
 }
 
 // Modal Classes
@@ -347,7 +275,7 @@ export class FinanceDashboardView extends BasesView {
 			// @ts-ignore
 			const summaryValue = this.data.getSummaryValue(this.controller, this.data.data, prop, 'Sum');
 			// @ts-ignore
-			if (!summaryValue || !summaryValue.data || typeof summaryValue.data !== 'number') continue;
+			if (!summaryValue || summaryValue.data === null || summaryValue.data === undefined || typeof summaryValue.data !== 'number') continue;
 
 			// @ts-ignore
 			let sum = summaryValue.data;
@@ -395,6 +323,7 @@ export class FinanceDashboardView extends BasesView {
 		this.createNetWorthCard(netWorth, totalAssets, totalLiabilities);
 		this.createAccountBreakdown(categories);
 		this.createCharts(categories);
+		this.createSnapshotButton(categories);
 	}
 
 	private createNetWorthCard(netWorth: number, assets: number, liabilities: number): void {
@@ -565,6 +494,74 @@ export class FinanceDashboardView extends BasesView {
 			expenseChartDiv.createEl('h3', { text: 'Expense Distribution' });
 			const canvas = expenseChartDiv.createEl('canvas');
 			createPieChart(canvas, categories.expenses, 'expenses', this.plugin.settings.currencySymbol);
+		}
+	}
+
+	private createSnapshotButton(categories: AccountCategory): void {
+		const buttonContainer = this.containerEl.createDiv('snapshot-button-container');
+		const button = buttonContainer.createEl('button', {
+			text: 'Create Snapshot',
+			cls: 'snapshot-button'
+		});
+
+		button.addEventListener('click', async () => {
+			await this.createSnapshot(categories);
+		});
+	}
+
+	private async createSnapshot(categories: AccountCategory): Promise<void> {
+		try {
+			// Ensure snapshots folder exists
+			const folderPath = this.plugin.settings.snapshotsFolderPath;
+			const folder = this.plugin.app.vault.getAbstractFileByPath(folderPath);
+
+			if (!folder) {
+				await this.plugin.app.vault.createFolder(folderPath);
+			}
+
+			// Create frontmatter with all accounts
+			const frontmatter: Record<string, number> = {};
+
+			for (const [name, value] of categories.assets) {
+				frontmatter[name] = value;
+			}
+			for (const [name, value] of categories.liabilities) {
+				frontmatter[name] = value;
+			}
+			for (const [name, value] of categories.income) {
+				frontmatter[name] = value;
+			}
+			for (const [name, value] of categories.expenses) {
+				frontmatter[name] = value;
+			}
+
+			// Add date
+			const now = new Date();
+			const dateStr = now.toISOString();
+
+			// Create file content
+			const yamlLines = ['---'];
+			for (const [key, value] of Object.entries(frontmatter)) {
+				yamlLines.push(`${key}: ${value}`);
+			}
+			yamlLines.push(`date: ${dateStr}`);
+			yamlLines.push('---');
+			yamlLines.push('');
+			yamlLines.push(`Snapshot taken at: ${now.toLocaleString()}`);
+
+			const content = yamlLines.join('\n');
+
+			// Create filename with timestamp
+			const filename = `snapshot-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}.md`;
+			const filepath = `${folderPath}/${filename}`;
+
+			await this.plugin.app.vault.create(filepath, content);
+			// @ts-ignore
+			new Notice(`Snapshot created: ${filename}`);
+		} catch (error: any) {
+			// @ts-ignore
+			new Notice(`Error creating snapshot: ${error.message}`);
+			console.error('Snapshot creation error:', error);
 		}
 	}
 
@@ -804,6 +801,38 @@ export class FinanceDashboardView extends BasesView {
 
 			.chart-wrapper canvas {
 				max-height: 300px;
+			}
+
+			.snapshot-button-container {
+				margin-top: 30px;
+				padding: 20px;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+			}
+
+			.snapshot-button {
+				background: var(--interactive-accent);
+				color: var(--text-on-accent);
+				border: none;
+				border-radius: 8px;
+				padding: 12px 24px;
+				font-size: 16px;
+				font-weight: 600;
+				cursor: pointer;
+				transition: all 0.2s ease;
+				box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+			}
+
+			.snapshot-button:hover {
+				background: var(--interactive-accent-hover);
+				box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+				transform: translateY(-1px);
+			}
+
+			.snapshot-button:active {
+				transform: translateY(0);
+				box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 			}
 		`;
 		document.head.appendChild(style);
@@ -1155,12 +1184,12 @@ export class TransactionTableView extends BasesView {
 			}
 
 			.validation-cell.invalid {
-			color: #ef4444;
-		}
+				color: #ef4444;
+			}
 
-		.validation-cell.warning {
-			color: #f59e0b;
-		}
+			.validation-cell.warning {
+				color: #f59e0b;
+			}
 
 		.transaction-table th,
 		.transaction-table td {
