@@ -1,4 +1,4 @@
-import { App, Plugin, BasesView, parsePropertyId, Modal, Notice } from 'obsidian';
+import { App, Plugin, BasesView, parsePropertyId, Modal, Notice, TFile, TFolder, TAbstractFile } from 'obsidian';
 import { DEFAULT_SETTINGS, FinancePluginSettings, FinanceSettingTab } from "./settings";
 import { createPieChart, formatCurrency, createNetWorthLineChart, SnapshotDataPoint } from "./utils/charts";
 
@@ -855,13 +855,12 @@ export class FinanceDashboardView extends BasesView {
 
 		try {
 			const folder = this.plugin.app.vault.getAbstractFileByPath(folderPath);
-			// @ts-ignore - TFolder has children property
-			if (!folder || !folder.children) {
+			if (!(folder instanceof TFolder)) {
 				return snapshots;
 			}
 
 			// Get all markdown files in the snapshots folder
-			const files = folder.children.filter((file: any) => file.extension === 'md');
+			const files = folder.children.filter((file) => file instanceof TFile && file.extension === 'md') as TFile[];
 
 			for (const file of files) {
 				try {
@@ -870,7 +869,7 @@ export class FinanceDashboardView extends BasesView {
 
 					if (!frontmatterMatch) continue;
 
-					const frontmatter = frontmatterMatch[1];
+					const frontmatter = frontmatterMatch[1] || '';
 					const lines = frontmatter.split('\n');
 
 					let date: Date | null = null;
