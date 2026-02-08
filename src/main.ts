@@ -397,17 +397,17 @@ export class FinanceDashboardView extends BasesView {
 	private createTopRow(netWorth: number, categories: AccountCategory, invalidCount: number): void {
 		const topRow = this.containerEl.createDiv('dashboard-top-row');
 
-		// Compact Net Worth Card
+
+		// 1. Net Worth Card (Left/Top)
 		const netWorthCard = topRow.createDiv('compact-net-worth-card');
 
-		// Left column: Net Worth Info
 		const infoContainer = netWorthCard.createDiv('net-worth-info');
 		infoContainer.createEl('h3', { text: 'NET WORTH' });
 		const amount = infoContainer.createDiv('compact-net-worth-amount');
 		amount.textContent = formatCurrency(netWorth, this.plugin.settings.currencySymbol);
 
-		// Right column: Actions
-		const actionsContainer = netWorthCard.createDiv('net-worth-actions');
+		// 2. Actions Block (Right/Bottom)
+		const actionsContainer = topRow.createDiv('dashboard-actions-block');
 
 		// Snapshot button
 		const snapshotBtn = actionsContainer.createEl('button', {
@@ -1249,9 +1249,11 @@ export class FinanceDashboardView extends BasesView {
 				border: 1px solid var(--background-modifier-border);
 			}
 
-			/* Top Row: Net Worth + Actions merged */
+			/* Top Row: Responsive Layout */
 			.dashboard-top-row {
-				display: block;
+				display: flex;
+				flex-wrap: wrap;
+				gap: 20px;
 				margin-bottom: 20px;
 			}
 
@@ -1262,14 +1264,18 @@ export class FinanceDashboardView extends BasesView {
 				border: 2px solid var(--background-modifier-border);
 				box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
 				display: flex;
-				justify-content: space-between;
-				align-items: center;
+				flex: 1;
+				min-width: 300px;
+				flex-direction: column;
+				justify-content: center;
+				align-items: flex-start;
 			}
 
 			.net-worth-info {
 				display: flex;
 				flex-direction: column;
 				justify-content: center;
+				width: 100%;
 			}
 
 			.compact-net-worth-card h3 {
@@ -1288,13 +1294,44 @@ export class FinanceDashboardView extends BasesView {
 				color: var(--finance-bright-blue);
 				text-shadow: 0 2px 12px rgba(59, 130, 246, 0.3);
 				margin: 0;
+				word-break: break-all; /* Prevent overflow of long numbers */
+				line-height: 1.2;
 			}
 
-			.net-worth-actions {
+			/* Actions Block */
+			.dashboard-actions-block {
 				display: flex;
 				flex-direction: column;
 				gap: 12px;
 				min-width: 200px;
+				flex: 0 0 auto;
+			}
+
+			/* Responsive Adjustments */
+			@media (max-width: 600px) {
+				.dashboard-top-row {
+					flex-direction: column;
+				}
+				
+				.compact-net-worth-card {
+					min-width: 0;
+					width: 100%;
+					align-items: center; /* Center on mobile */
+				}
+				
+				.compact-net-worth-amount {
+					text-align: center;
+					font-size: 36px; /* Smaller font on mobile */
+				}
+
+				.net-worth-info h3 {
+					text-align: center;
+				}
+
+				.dashboard-actions-block {
+					width: 100%;
+					min-width: 0;
+				}
 			}
 
 			.action-button {
@@ -1332,7 +1369,7 @@ export class FinanceDashboardView extends BasesView {
 			/* Category Blocks */
 			.category-blocks-row {
 				display: grid;
-				grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+				grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
 				gap: 20px;
 				margin-bottom: 20px;
 			}
@@ -1594,7 +1631,7 @@ export class FinanceDashboardView extends BasesView {
 
 			.charts-container {
 				display: grid;
-				grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+				grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
 				gap: 20px;
 			}
 
