@@ -293,6 +293,74 @@ class TableRowsModal extends Modal {
 	}
 }
 
+class ValidateTransactionsModal extends Modal {
+	private dashboardView: FinanceDashboardView;
+
+	constructor(app: App, dashboardView: FinanceDashboardView) {
+		super(app);
+		this.dashboardView = dashboardView;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.createEl('h2', { text: 'Validate Transactions' });
+
+		contentEl.createEl('p', {
+			text: 'Choose how to validate your transactions:'
+		});
+
+		// Option 1: Validate only invalid
+		const option1Container = contentEl.createDiv({ cls: 'validation-option' });
+		option1Container.style.marginBottom = '20px';
+		option1Container.style.padding = '15px';
+		option1Container.style.border = '1px solid var(--background-modifier-border)';
+		option1Container.style.borderRadius = '8px';
+
+		option1Container.createEl('h4', { text: 'Validate Invalid Only' });
+		option1Container.createEl('p', {
+			text: 'Only checks transactions where is_valid is not true. Fast and efficient for most use cases.',
+			cls: 'setting-item-description'
+		});
+
+		const validateInvalidBtn = option1Container.createEl('button', {
+			text: 'Validate Invalid Transactions',
+			cls: 'mod-cta'
+		});
+		validateInvalidBtn.style.width = '100%';
+		validateInvalidBtn.addEventListener('click', async () => {
+			this.close();
+			await this.dashboardView.validateAllTransactions(false);
+		});
+
+		// Option 2: Force validate all
+		const option2Container = contentEl.createDiv({ cls: 'validation-option' });
+		option2Container.style.padding = '15px';
+		option2Container.style.border = '1px solid var(--background-modifier-border)';
+		option2Container.style.borderRadius = '8px';
+
+		option2Container.createEl('h4', { text: 'Force Validate All' });
+		const warningText = option2Container.createEl('p', {
+			text: '⚠️ Re-validates ALL transactions, even those already marked valid. This is an expensive operation that reads and modifies every transaction file.',
+			cls: 'setting-item-description'
+		});
+		warningText.style.color = 'var(--text-warning)';
+
+		const forceValidateBtn = option2Container.createEl('button', {
+			text: 'Force Validate All Transactions'
+		});
+		forceValidateBtn.style.width = '100%';
+		forceValidateBtn.addEventListener('click', async () => {
+			this.close();
+			await this.dashboardView.validateAllTransactions(true);
+		});
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
 // ... (AccountCategory interface and helper functions remain unchanged)
 
 interface AccountCategory {
@@ -424,12 +492,9 @@ export class FinanceDashboardView extends BasesView {
 		const totalExpenses = Array.from(categories.expenses.values()).reduce((a, b) => a + b, 0);
 		const netWorth = totalAssets + totalLiabilities; // liabilities are negative
 
-		// Calculate invalid transactions count
-		const invalidCount = this.countInvalidTransactions();
-
 		// Create dashboard components in new layout order
 		// Row 1: Compact Net Worth + Actions
-		this.createTopRow(netWorth, categories, invalidCount);
+		this.createTopRow(netWorth, categories);
 
 		// Row 2: Transaction Table (Moved here as requested)
 		this.createTransactionTable();
@@ -441,9 +506,8 @@ export class FinanceDashboardView extends BasesView {
 		this.createCategoryBlocks(categories);
 	}
 
-	private createTopRow(netWorth: number, categories: AccountCategory, invalidCount: number): void {
+	private createTopRow(netWorth: number, categories: AccountCategory): void {
 		const topRow = this.containerEl.createDiv('dashboard-top-row');
-
 
 		// 1. Net Worth Card (Left/Top)
 		const netWorthCard = topRow.createDiv('compact-net-worth-card');
@@ -483,37 +547,14 @@ export class FinanceDashboardView extends BasesView {
 			new RatesAndPricesModal(this.app, this.plugin).open();
 		});
 
-		// ...
-
-		// Validation button (Action 3)
+		// Validate Transactions button
 		const validationBtn = actionsContainer.createEl('button', {
+			text: 'Validate Transactions',
 			cls: 'action-button'
 		});
-
-		if (invalidCount > 0) {
-			validationBtn.textContent = `${invalidCount} Invalid Transactions`;
-			validationBtn.addClass('invalid-transactions-btn');
-			// Use text color instead of background as requested
-			validationBtn.style.color = '#ef4444'; // Red
-			validationBtn.style.backgroundColor = 'transparent';
-			validationBtn.style.border = '1px solid #ef4444';
-
-			validationBtn.addEventListener('click', () => {
-				new Notice(`Please check the ${invalidCount} invalid transactions in the table below.\nEnsure the sum of all accounts in each transaction is 0.`);
-			});
-		} else {
-			validationBtn.textContent = '✓ All recent transactions valid';
-			validationBtn.addClass('valid-transactions-btn');
-			// Use text color instead of background
-			validationBtn.style.color = '#10b981'; // Green
-			validationBtn.style.backgroundColor = 'transparent';
-			validationBtn.style.border = '1px solid #10b981';
-
-			// Optional: Make it clickable to confirm validity
-			validationBtn.addEventListener('click', () => {
-				new Notice('All processed transactions are valid!');
-			});
-		}
+		validationBtn.addEventListener('click', () => {
+			new ValidateTransactionsModal(this.app, this).open();
+		});
 	}
 
 	private validateTransaction(entry: any, accountProps: string[]): boolean {
@@ -545,6 +586,111 @@ export class FinanceDashboardView extends BasesView {
 			}
 		}
 		return false;
+	}
+
+	public async validateAllTransactions(forceAll: boolean = false): Promise<void> {
+		const transactionsFolder = this.plugin.settings.transactionsFolderPath;
+		const folder = this.plugin.app.vault.getAbstractFileByPath(transactionsFolder);
+
+		if (!(folder instanceof TFolder)) {
+			new Notice('Transactions folder not found.');
+			return;
+		}
+
+		const allFiles = folder.children.filter((file) => file instanceof TFile && file.extension === 'md') as TFile[];
+		let filesToProcess: TFile[] = allFiles;
+
+		// If not forcing all, only process files that need validation
+		if (!forceAll) {
+			filesToProcess = [];
+			for (const file of allFiles) {
+				const content = await this.plugin.app.vault.read(file);
+				// Check if is_valid is not explicitly true
+				if (!content.includes('is_valid: true')) {
+					filesToProcess.push(file);
+				}
+			}
+		}
+
+		let validCount = 0;
+		let invalidCount = 0;
+
+		new Notice(`Validating ${filesToProcess.length} transactions...`);
+
+		for (const file of filesToProcess) {
+			try {
+				const content = await this.plugin.app.vault.read(file);
+				// Handle both CRLF (Windows) and LF (Unix) line endings
+				const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+
+				if (!frontmatterMatch) continue;
+
+				const frontmatter = frontmatterMatch[1] || '';
+				const lines = frontmatter.split('\n');
+
+				// Calculate sum of all account properties
+				let sum = 0;
+				let hasCommodity = false;
+				const newLines: string[] = [];
+				let hasIsValid = false;
+
+				for (const line of lines) {
+					const colonIndex = line.indexOf(':');
+					if (colonIndex === -1) {
+						newLines.push(line);
+						continue;
+					}
+
+					const key = line.substring(0, colonIndex).trim();
+					const value = line.substring(colonIndex + 1).trim();
+
+					// Skip is_valid line, we'll add it at the end
+					if (key === 'is_valid') {
+						hasIsValid = true;
+						continue;
+					}
+
+					// Check if this is an account property
+					if (key.startsWith('Asset-') || key.startsWith('Liability-') ||
+						key.startsWith('Expense-') || key.startsWith('Income-')) {
+						const numValue = parseFloat(value);
+						if (!isNaN(numValue)) {
+							sum += numValue;
+						}
+					} else if (key.startsWith('Commodity-')) {
+						hasCommodity = true;
+					}
+
+					newLines.push(line);
+				}
+
+				// Determine validity (commodities are always valid, others need sum = 0)
+				const isValid = hasCommodity || Math.abs(sum) < 0.01;
+
+				// Add is_valid property
+				newLines.push(`is_valid: ${isValid}`);
+
+				// Reconstruct content
+				const newFrontmatter = newLines.join('\n');
+				const bodyContent = content.substring(frontmatterMatch[0].length);
+				const newContent = `---\n${newFrontmatter}\n---${bodyContent}`;
+
+				// Only update if content changed
+				if (newContent !== content) {
+					await this.plugin.app.vault.modify(file, newContent);
+				}
+
+				if (isValid) {
+					validCount++;
+				} else {
+					invalidCount++;
+				}
+			} catch (error) {
+				console.error(`Error validating ${file.path}:`, error);
+			}
+		}
+
+		new Notice(`Validation complete! ✓ ${validCount} valid, ✗ ${invalidCount} invalid`);
 	}
 
 	private async logTransaction(): Promise<void> {
@@ -910,25 +1056,6 @@ export class FinanceDashboardView extends BasesView {
 		return sortProperties(accountProps);
 	}
 
-	private countInvalidTransactions(): number {
-		const accountProps = this.getAccountProperties();
-		// @ts-ignore
-		const entries = this.data.data || [];
-		let invalidCount = 0;
-
-		for (const entry of entries) {
-			// Skip commodities
-			if (this.hasCommodity(entry, accountProps)) continue;
-
-			// Check validity
-			if (!this.validateTransaction(entry, accountProps)) {
-				invalidCount++;
-			}
-		}
-
-		return invalidCount;
-	}
-
 	private createTransactionTable(): void {
 		const tableContainer = this.containerEl.createDiv('transaction-table-section');
 		tableContainer.createEl('h3', { text: 'Recent Transactions' });
@@ -1028,16 +1155,11 @@ export class FinanceDashboardView extends BasesView {
 		// Create data rows (limit based on settings)
 		const entries = this.data.data || [];
 
-		// Sort by validity (invalid first) then by file modified time descending
+		// Sort by is_valid (invalid first) then by file modified time descending
 		entries.sort((a: any, b: any) => {
-			// Check validity (excluding commodities)
-			const accountProps = this.getAccountProperties();
-
-			const isACommodity = this.hasCommodity(a, accountProps);
-			const isBCommodity = this.hasCommodity(b, accountProps);
-
-			const isAValid = isACommodity || this.validateTransaction(a, accountProps);
-			const isBValid = isBCommodity || this.validateTransaction(b, accountProps);
+			// Read stored is_valid property
+			const isAValid = a.getRawProperty('is_valid') !== false;
+			const isBValid = b.getRawProperty('is_valid') !== false;
 
 			// If one is invalid and other is valid, invalid comes first
 			if (isAValid !== isBValid) {
@@ -1093,17 +1215,16 @@ export class FinanceDashboardView extends BasesView {
 				}
 			}
 
-			// Validation column
+			// Validation column - read stored is_valid property
 			const validCell = row.createEl('td', { cls: 'validation-cell' });
-			const hasCommodity = this.hasCommodity(entry, accountProps);
+			const isValid = entry.getRawProperty('is_valid') === true;
 
-			if (hasCommodity) {
-				validCell.textContent = '⚠';
-				validCell.addClass('warning');
+			if (isValid) {
+				validCell.textContent = '✓';
+				validCell.addClass('valid');
 			} else {
-				const isValid = this.validateTransaction(entry, accountProps);
-				validCell.textContent = isValid ? '✓' : '✗';
-				validCell.addClass(isValid ? 'valid' : 'invalid');
+				validCell.textContent = '✗';
+				validCell.addClass('invalid');
 			}
 
 			// Account columns

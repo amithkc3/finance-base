@@ -1,6 +1,7 @@
 ---
 comment: 
 date: {{date:YYYY-MM-DDTHH:mm}}
+is_valid: false
 ---
 
 [[{{USAGE_GUIDE_LINK}}]]
