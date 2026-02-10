@@ -204,7 +204,7 @@ class RatesAndPricesModal extends Modal {
 		const pricesTextarea = contentEl.createEl('textarea');
 		pricesTextarea.value = JSON.stringify(this.plugin.settings.commodityPrices, null, 2);
 		pricesTextarea.style.width = '100%';
-		pricesTextarea.style.height = '150px';
+		pricesTextarea.style.height = '300px';
 		pricesTextarea.style.marginBottom = '20px';
 
 		// 2. Currency Rate Section
