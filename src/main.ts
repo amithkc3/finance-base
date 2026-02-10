@@ -36,6 +36,16 @@ export default class PersonalFinancePlugin extends Plugin {
 			}
 		}));
 
+		this.addRibbonIcon('lucide-wallet', 'Open Finance Dashboard', async () => {
+			const filePath = this.settings.financeBasePath;
+			const file = this.app.vault.getAbstractFileByPath(filePath);
+			if (file instanceof TFile) {
+				await this.app.workspace.getLeaf().openFile(file);
+			} else {
+				new Notice(`File not found: ${filePath}`);
+			}
+		});
+
 		// @ts-ignore
 		this.registerBasesView(FinanceDashboardViewType, {
 			name: 'Personal Finance Dashboard',

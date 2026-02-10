@@ -17,6 +17,7 @@ export interface FinancePluginSettings {
 	templateFilePath: string;
 	usageGuideFilePath: string;
 	dashboardDataPath: string;
+	financeBasePath: string;
 }
 
 export const DEFAULT_SETTINGS: FinancePluginSettings = {
@@ -29,7 +30,8 @@ export const DEFAULT_SETTINGS: FinancePluginSettings = {
 	snapshotsFolderPath: 'Finance/Snapshots',
 	templateFilePath: 'Finance/Templates/Transaction.md',
 	usageGuideFilePath: 'Finance/Personal-finances-usage-guide.md',
-	dashboardDataPath: 'Finance/dashboard-data.json'
+	dashboardDataPath: 'Finance/dashboard-data.json',
+	financeBasePath: 'Finance/Finances.base'
 }
 
 export class FinanceSettingTab extends PluginSettingTab {
@@ -160,6 +162,17 @@ export class FinanceSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.usageGuideFilePath)
 				.onChange(async (value) => {
 					this.plugin.settings.usageGuideFilePath = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Finance Base File Path')
+			.setDesc('Path to the Finance.base file to open from the ribbon')
+			.addText(text => text
+				.setPlaceholder('Finance/Finances.base')
+				.setValue(this.plugin.settings.financeBasePath)
+				.onChange(async (value) => {
+					this.plugin.settings.financeBasePath = value;
 					await this.plugin.saveSettings();
 				}));
 	}
