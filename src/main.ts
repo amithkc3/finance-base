@@ -139,6 +139,23 @@ export default class PersonalFinancePlugin extends Plugin {
 				await this.app.vault.createFolder(this.settings.snapshotsFolderPath);
 			}
 
+			// Check if snapshots folder is empty and create default if needed
+			const snapshotsFolder = this.app.vault.getAbstractFileByPath(this.settings.snapshotsFolderPath);
+			if (snapshotsFolder instanceof TFolder) {
+				const snapshotFiles = snapshotsFolder.children.filter(f => f instanceof TFile && f.extension === 'md');
+				if (snapshotFiles.length === 0) {
+					const now = new Date();
+					const filename = `snapshot-initial.md`;
+					const content = `---\n` +
+						`date: ${now.toISOString()}\n` +
+						`---\n\n` +
+						`Initial empty snapshot to initialize charts.`;
+
+					await this.app.vault.create(`${this.settings.snapshotsFolderPath}/${filename}`, content);
+					new Notice('Created initial snapshot file');
+				}
+			}
+
 			// 1. Create Usage Guide
 			const guidePath = this.settings.usageGuideFilePath;
 			// Create parent folder for usage guide if it doesn't exist
