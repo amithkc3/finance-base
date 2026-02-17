@@ -1,4 +1,4 @@
-import { App, Plugin, BasesView, parsePropertyId, Modal, Notice, TFile, TFolder, TAbstractFile, setIcon } from 'obsidian';
+import { App, Plugin, BasesView, parsePropertyId, Modal, Notice, TFile, TFolder, TAbstractFile, setIcon, MarkdownView } from 'obsidian';
 import { DEFAULT_SETTINGS, FinancePluginSettings, FinanceSettingTab } from "./settings";
 import { createPieChart, formatCurrency, createNetWorthLineChart, SnapshotDataPoint } from "./utils/charts";
 
@@ -37,6 +37,39 @@ export default class PersonalFinancePlugin extends Plugin {
 				await this.loadSettings();
 			}
 		}));
+
+		// Register an event for when the layout changes to enforce read-only mode
+		this.registerEvent(
+			this.app.workspace.on('layout-change', this.onLayoutChange.bind(this))
+		);
+
+		// Add command to unlock the current transaction file
+		this.addCommand({
+			id: 'unlock-current-transaction',
+			name: 'Unlock Current Transaction',
+			checkCallback: (checking: boolean) => {
+				const activeLeaf = this.app.workspace.activeLeaf;
+				if (!activeLeaf) return false;
+
+				const view = activeLeaf.view;
+				if (!(view instanceof MarkdownView)) return false;
+
+				const file = view.file;
+				if (!file) return false;
+
+				// Check if it's a locked transaction file
+				const cache = this.app.metadataCache.getFileCache(file);
+				if (!cache || !cache.frontmatter || !cache.frontmatter.locked) {
+					return false;
+				}
+
+				if (checking) return true;
+
+				// Perform unlock
+				this.unlockTransaction(file);
+				return true;
+			}
+		});
 
 		this.addRibbonIcon('lucide-wallet', 'Open Finance Dashboard', async () => {
 			const filePath = this.settings.financeBasePath;
@@ -200,6 +233,67 @@ export default class PersonalFinancePlugin extends Plugin {
 			new Notice('Error creating finance folders/template');
 		}
 	}
+	// Handle layout changes to enforce read-only mode for locked files
+	private async onLayoutChange() {
+		// Get all open leaves in the workspace
+		const leaves = this.app.workspace.getLeavesOfType('markdown');
+
+		// Iterate over each leaf
+		leaves.forEach((leaf) => {
+			// Ensure the leaf has a MarkdownView
+			if (!(leaf.view instanceof MarkdownView)) {
+				return;
+			}
+
+			// Get the file currently opened in the leaf
+			const file = leaf.view.file;
+
+			// If no file is present, skip
+			if (!file) {
+				return;
+			}
+
+			// Check frontmatter for locked property
+			const cache = this.app.metadataCache.getFileCache(file);
+			if (cache && cache.frontmatter && cache.frontmatter.locked === true) {
+				// Force the view into preview (read mode)
+				const viewState = leaf.getViewState();
+				if (viewState.state && viewState.state.mode !== 'preview') {
+					leaf.setViewState({
+						...viewState,
+						state: {
+							...viewState.state,
+							mode: 'preview'
+						}
+					});
+					new Notice('This transaction is locked. Use "Unlock Current Transaction" to edit.');
+				}
+			}
+		});
+	}
+
+	async unlockTransaction(file: TFile) {
+		try {
+			const content = await this.app.vault.read(file);
+			const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+
+			if (!frontmatterMatch) return;
+
+			const frontmatter = frontmatterMatch[1] || '';
+			const lines = frontmatter.split('\n');
+			const newLines = lines.filter(line => !line.trim().startsWith('locked:'));
+
+			const newFrontmatter = newLines.join('\n');
+			const bodyContent = content.substring(frontmatterMatch[0].length);
+			const newContent = `---\n${newFrontmatter}\n---${bodyContent}`;
+
+			await this.app.vault.modify(file, newContent);
+			new Notice(`Unlocked ${file.basename}`);
+		} catch (error) {
+			console.error('Error unlocking file:', error);
+			new Notice('Error unlocking file');
+		}
+	}
 }
 
 
@@ -347,7 +441,7 @@ class ValidateTransactionsModal extends Modal {
 
 		option1Container.createEl('h4', { text: 'Validate Invalid Transactions' });
 		option1Container.createEl('p', {
-			text: 'Validates new transactions without checksums. Computes commodity prices, generates checksums, and marks as valid/invalid.',
+			text: 'Validates new transactions without checksums. Computes commodity prices, generates checksums, marks as valid/invalid, and locks valid transactions.',
 			cls: 'setting-item-description'
 		});
 
@@ -992,6 +1086,11 @@ export class FinanceDashboardView extends BasesView {
 				}
 				newLines.push(`checksum: ${checksum}`);
 				newLines.push(`is_valid: ${isValid}`);
+
+				// Add locked property for valid transactions
+				if (isValid) {
+					newLines.push(`locked: true`);
+				}
 
 				// Reconstruct content
 				const newFrontmatter = newLines.join('\n');
