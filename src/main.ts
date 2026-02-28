@@ -20,8 +20,18 @@ const ACCOUNT_PREFIXES = {
 	INCOME: 'Income-',
 	COMMODITY: 'Commodity-',
 	UNIT_PRICE: 'UnitPrice-',
-	INVALID_REASON: 'Invalid_reason'
+	INVALID_REASON: 'Invalid_reason',
+	HASH: 'hash',
+	PREV_VALID_TX: 'prev_valid_transaction',
+	PREV_VALID_TX_HASH: 'Prev_valid_transaction_hash',
+	INTEGRITY_ERROR: 'integrity_error'
 } as const;
+
+// Fields that are stripped when unlocking a transaction
+const COMPUTED_FIELDS = [
+	'locked', 'hash', 'is_valid', 'Invalid_reason',
+	'prev_valid_transaction', 'Prev_valid_transaction_hash', 'integrity_error'
+] as const;
 
 export default class PersonalFinancePlugin extends Plugin {
 	settings: FinancePluginSettings;
@@ -228,6 +238,16 @@ export default class PersonalFinancePlugin extends Plugin {
 				await this.app.vault.create(basePath, baseContent);
 			}
 
+			// 4. Create Seed Transaction (genesis block for the blockchain-linked ledger)
+			const seedPath = `${this.settings.transactionsFolderPath}/seed-transaction.md`;
+			if (!(await this.app.vault.adapter.exists(seedPath))) {
+				const seedDate = new Date().toISOString().slice(0, 16);
+				const seedHash = 'seed0000'; // Fixed genesis hash
+				const seedContent = `---\ncomment: Genesis seed transaction — do not edit\ndate: ${seedDate}\nhash: ${seedHash}\nis_valid: true\nlocked: true\n---\n\n# Seed Transaction\nThis is the genesis block for the transaction integrity chain.\n`;
+				await this.app.vault.create(seedPath, seedContent);
+				new Notice('Created seed transaction (genesis block)');
+			}
+
 		} catch (error) {
 			console.error('Error ensuring file structure:', error);
 			new Notice('Error creating finance folders/template');
@@ -281,6 +301,7 @@ export default class PersonalFinancePlugin extends Plugin {
 
 			const frontmatter = frontmatterMatch[1] || '';
 			const lines = frontmatter.split('\n');
+			// Only remove the locked field — leave all other properties intact
 			const newLines = lines.filter(line => !line.trim().startsWith('locked:'));
 
 			const newFrontmatter = newLines.join('\n');
@@ -288,7 +309,7 @@ export default class PersonalFinancePlugin extends Plugin {
 			const newContent = `---\n${newFrontmatter}\n---${bodyContent}`;
 
 			await this.app.vault.modify(file, newContent);
-			new Notice(`Unlocked ${file.basename}`);
+			new Notice(`Unlocked ${file.basename} — ready for re-validation`);
 		} catch (error) {
 			console.error('Error unlocking file:', error);
 			new Notice('Error unlocking file');
@@ -426,22 +447,22 @@ class ValidateTransactionsModal extends Modal {
 
 	onOpen() {
 		const { contentEl } = this;
-		contentEl.createEl('h2', { text: 'Validate Transactions' });
+		contentEl.createEl('h2', { text: 'Transaction Actions' });
 
 		contentEl.createEl('p', {
-			text: 'Choose how to validate your transactions:'
+			text: 'Choose a transaction action:'
 		});
 
-		// Option 1: Validate Invalid Transactions (GREEN)
+		// Option 1: Validate New Transactions (GREEN)
 		const option1Container = contentEl.createDiv({ cls: 'validation-option' });
 		option1Container.style.marginBottom = '20px';
 		option1Container.style.padding = '15px';
 		option1Container.style.border = '1px solid var(--background-modifier-border)';
 		option1Container.style.borderRadius = '8px';
 
-		option1Container.createEl('h4', { text: 'Validate Invalid Transactions' });
+		option1Container.createEl('h4', { text: 'Validate New Transactions' });
 		option1Container.createEl('p', {
-			text: 'Validates new transactions without checksums. Computes commodity prices, generates checksums, marks as valid/invalid, and locks valid transactions.',
+			text: 'Finds transaction files without a hash (new/unlocked). Validates commodity prices and zero-sum rule, links to the previous valid transaction (blockchain-style), and locks valid transactions.',
 			cls: 'setting-item-description'
 		});
 
@@ -882,40 +903,50 @@ export class FinanceDashboardView extends BasesView {
 		return false;
 	}
 
-	// Compute simple hash for checksum (browser-compatible for Obsidian)
-	private computeChecksum(accountProps: Record<string, number>): string {
+	// Compute transaction hash — covers all account props + date + prevHash (blockchain-style)
+	private computeTransactionHash(
+		accountProps: Record<string, number>,
+		date: string,
+		prevHash: string
+	): string {
 		const sortedKeys = Object.keys(accountProps).sort();
-		const data = sortedKeys.map(k => `${k}:${accountProps[k]}`).join('|');
+		const data = sortedKeys.map(k => `${k}:${accountProps[k]}`).join('|')
+			+ `|date:${date}|prev:${prevHash}`;
 
-		// Simple hash function (compatible with browser environment)
+		// djb2-style hash (browser-compatible)
 		let hash = 0;
 		for (let i = 0; i < data.length; i++) {
 			const char = data.charCodeAt(i);
 			hash = ((hash << 5) - hash) + char;
-			hash = hash & hash; // Convert to 32-bit integer
+			hash = hash & hash; // 32-bit integer
 		}
-
-		// Convert to positive hex string
 		return Math.abs(hash).toString(16).padStart(8, '0');
 	}
 
-	// Get commodity price - prioritize existing UnitPrice, then settings, then default
-	private getCommodityPrice(commodityName: string, frontmatterObj: any): number {
-		// 1. Check if UnitPrice already exists in transaction (historical price)
+	// Parse frontmatter text into a key→value record
+	private parseFrontmatter(frontmatter: string): Record<string, string> {
+		const obj: Record<string, string> = {};
+		for (const line of frontmatter.split('\n')) {
+			const colonIdx = line.indexOf(':');
+			if (colonIdx !== -1) {
+				const key = line.substring(0, colonIdx).trim();
+				const value = line.substring(colonIdx + 1).trim();
+				if (key) obj[key] = value;
+			}
+		}
+		return obj;
+	}
+
+	// Get commodity price — prioritize existing UnitPrice in file, then settings, then 1
+	private getCommodityPrice(commodityName: string, frontmatterObj: Record<string, string>): number {
 		const unitPriceKey = `${ACCOUNT_PREFIXES.UNIT_PRICE}${commodityName}`;
-		console.log("getCommodityPrice called");
-		console.log(unitPriceKey, frontmatterObj[unitPriceKey]);
 		if (frontmatterObj[unitPriceKey] !== undefined) {
 			const price = parseFloat(frontmatterObj[unitPriceKey]);
 			return isNaN(price) ? 1 : price;
 		}
-
-		// 2. Get from settings and convert currency if needed
 		const pricing = this.plugin.settings.commodityPrices[commodityName];
-		if (!pricing) return 1; // Default fallback
-
+		if (!pricing) return 1;
 		let price = pricing.value;
-		// Convert to transaction currency if needed
 		if (pricing.currency === '$' && this.plugin.settings.currencySymbol === '₹') {
 			price *= this.plugin.settings.usdToInr;
 		} else if (pricing.currency === '₹' && this.plugin.settings.currencySymbol === '$') {
@@ -924,7 +955,30 @@ export class FinanceDashboardView extends BasesView {
 		return price;
 	}
 
-	// Validate only transactions where checksum doesn't exist (truly new transactions)
+	// Find the last valid transaction (is_valid=true AND hash exists), sorted by mtime desc
+	private async findLastValidTransaction(): Promise<{ file: TFile; hash: string } | null> {
+		const transactionsFolder = this.plugin.settings.transactionsFolderPath;
+		const folder = this.plugin.app.vault.getAbstractFileByPath(transactionsFolder);
+		if (!(folder instanceof TFolder)) return null;
+
+		const allFiles = folder.children.filter(f => f instanceof TFile && (f as TFile).extension === 'md') as TFile[];
+		allFiles.sort((a, b) => b.stat.mtime - a.stat.mtime);
+
+		for (const file of allFiles) {
+			const content = await this.plugin.app.vault.read(file);
+			const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+			if (!fmMatch) continue;
+			const fm = this.parseFrontmatter(fmMatch[1] || '');
+			if (fm['is_valid'] === 'true' && fm[ACCOUNT_PREFIXES.HASH]) {
+				return { file, hash: fm[ACCOUNT_PREFIXES.HASH]! };
+			}
+		}
+		return null;
+	}
+
+	// ─── Validate New Transactions ───────────────────────────────────────────────
+
+	// Entry point: find files without a hash (new/unlocked), sort by ctime asc, validate each
 	public async validateInvalidTransactions(): Promise<void> {
 		const transactionsFolder = this.plugin.settings.transactionsFolderPath;
 		const folder = this.plugin.app.vault.getAbstractFileByPath(transactionsFolder);
@@ -934,24 +988,168 @@ export class FinanceDashboardView extends BasesView {
 			return;
 		}
 
-		const allFiles = folder.children.filter((file) => file instanceof TFile && file.extension === 'md') as TFile[];
+		const allFiles = folder.children.filter(f => f instanceof TFile && (f as TFile).extension === 'md') as TFile[];
 		const filesToProcess: TFile[] = [];
 
-		// Only process files WITHOUT checksum or with empty/undefined checksum
 		for (const file of allFiles) {
 			const content = await this.plugin.app.vault.read(file);
-			const checksumMatch = content.match(/^checksum:\s*(.*)$/m);
-			// Process if checksum doesn't exist OR if it exists but is empty/whitespace
-			if (!checksumMatch || !checksumMatch[1] || checksumMatch[1].trim() === '') {
+			// A file is "new" if it has no hash property in frontmatter
+			if (!content.match(/^hash:\s*\S/m)) {
 				filesToProcess.push(file);
 			}
+		}
+
+		// Oldest creation time first (process in chronological order for correct chain linking)
+		filesToProcess.sort((a, b) => a.stat.ctime - b.stat.ctime);
+
+		if (filesToProcess.length === 0) {
+			new Notice('No new transactions to validate.');
+			return;
 		}
 
 		await this.validateTransaction(filesToProcess);
 	}
 
-	// Verify transaction integrity using checksums (for already-validated transactions)
-	public async verifyTransactionIntegrity(count: number): Promise<void> {
+	// Core validation: commodity checks → zero-sum → blockchain link → hash → lock
+	private async validateTransaction(filesToProcess: TFile[]): Promise<void> {
+		let validCount = 0;
+		let invalidCount = 0;
+
+		new Notice(`Validating ${filesToProcess.length} new transaction(s)…`);
+
+		for (const file of filesToProcess) {
+			try {
+				const content = await this.plugin.app.vault.read(file);
+				const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+				if (!fmMatch) continue;
+
+				const rawFm = fmMatch[1] || '';
+				const fmObj = this.parseFrontmatter(rawFm);
+				const bodyContent = content.substring(fmMatch[0].length);
+
+				// Build clean lines — strip any existing validation/computed fields
+				const baseLines = rawFm.split('\n').filter(line => {
+					const trimmed = line.trim();
+					const colonIdx = trimmed.indexOf(':');
+					const key = colonIdx !== -1 ? trimmed.substring(0, colonIdx).trim() : trimmed;
+					return !(COMPUTED_FIELDS as readonly string[]).includes(key);
+				});
+
+				// ── Step 1: Commodity price logic ─────────────────────────────
+				const commodityProps: Record<string, number> = {};
+				const unitPriceProps: Record<string, number> = {};
+				const commodityPriceErrors: string[] = [];
+
+				for (const line of baseLines) {
+					const colonIdx = line.indexOf(':');
+					if (colonIdx === -1) continue;
+					const key = line.substring(0, colonIdx).trim();
+					const value = line.substring(colonIdx + 1).trim();
+					if (key.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
+						const name = key.substring(ACCOUNT_PREFIXES.COMMODITY.length);
+						const qty = parseFloat(value);
+						if (!isNaN(qty)) commodityProps[name] = qty;
+					}
+				}
+
+				for (const commodityName of Object.keys(commodityProps)) {
+					const unitPriceKey = `${ACCOUNT_PREFIXES.UNIT_PRICE}${commodityName}`;
+					if (fmObj[unitPriceKey] !== undefined) {
+						const p = parseFloat(fmObj[unitPriceKey]);
+						unitPriceProps[commodityName] = isNaN(p) ? 1 : p;
+					} else {
+						const price = this.getCommodityPrice(commodityName, fmObj);
+						unitPriceProps[commodityName] = price;
+						baseLines.push(`${unitPriceKey}: ${price}`);
+						// Track missing-price commodities (price fell back to 1)
+						const hasSetting = !!this.plugin.settings.commodityPrices[commodityName];
+						if (!hasSetting) commodityPriceErrors.push(commodityName);
+					}
+				}
+
+				if (commodityPriceErrors.length > 0) {
+					const reason = `Commodity price error ${commodityPriceErrors.join(' ')}`;
+					baseLines.push(`${ACCOUNT_PREFIXES.INVALID_REASON}: ${reason}`);
+					baseLines.push(`is_valid: false`);
+					const newContent = `---\n${baseLines.join('\n')}\n---${bodyContent}`;
+					await this.plugin.app.vault.modify(file, newContent);
+					invalidCount++;
+					continue;
+				}
+
+				// ── Step 2: Zero-sum logic ────────────────────────────────────
+				let simpleSum = 0;
+				let commoditySum = 0;
+				const accountProps: Record<string, number> = {};
+
+				for (const line of baseLines) {
+					const colonIdx = line.indexOf(':');
+					if (colonIdx === -1) continue;
+					const key = line.substring(0, colonIdx).trim();
+					const value = line.substring(colonIdx + 1).trim();
+					const num = parseFloat(value);
+					if (isNaN(num)) continue;
+
+					if (key.startsWith(ACCOUNT_PREFIXES.ASSET) ||
+						key.startsWith(ACCOUNT_PREFIXES.LIABILITY) ||
+						key.startsWith(ACCOUNT_PREFIXES.EXPENSE) ||
+						key.startsWith(ACCOUNT_PREFIXES.INCOME)) {
+						simpleSum += num;
+						accountProps[key] = num;
+					} else if (key.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
+						const name = key.substring(ACCOUNT_PREFIXES.COMMODITY.length);
+						commoditySum += num * (unitPriceProps[name] ?? 1);
+						accountProps[key] = num;
+					} else if (key.startsWith(ACCOUNT_PREFIXES.UNIT_PRICE)) {
+						accountProps[key] = num;
+					}
+				}
+
+				const totalSum = simpleSum + commoditySum;
+
+				if (Math.abs(totalSum) >= 0.01) {
+					const reason = `0 sum error ${totalSum.toFixed(2)}`;
+					baseLines.push(`${ACCOUNT_PREFIXES.INVALID_REASON}: ${reason}`);
+					baseLines.push(`is_valid: false`);
+					const newContent = `---\n${baseLines.join('\n')}\n---${bodyContent}`;
+					await this.plugin.app.vault.modify(file, newContent);
+					invalidCount++;
+					continue;
+				}
+
+				// ── Step 3: Blockchain linking ────────────────────────────────
+				const prevTx = await this.findLastValidTransaction();
+				const prevHash = prevTx ? prevTx.hash : 'seed0000';
+				const prevLink = prevTx ? prevTx.file.basename : 'seed-transaction';
+
+				baseLines.push(`${ACCOUNT_PREFIXES.PREV_VALID_TX}: "[[${prevLink}]]"`);
+				baseLines.push(`${ACCOUNT_PREFIXES.PREV_VALID_TX_HASH}: ${prevHash}`);
+
+				// ── Step 4: Compute hash & finalise ──────────────────────────
+				const date = fmObj['date'] ?? '';
+				const txHash = this.computeTransactionHash(accountProps, date, prevHash);
+
+				baseLines.push(`${ACCOUNT_PREFIXES.HASH}: ${txHash}`);
+				baseLines.push(`is_valid: true`);
+				baseLines.push(`locked: true`);
+
+				const newContent = `---\n${baseLines.join('\n')}\n---${bodyContent}`;
+				await this.plugin.app.vault.modify(file, newContent);
+				validCount++;
+
+			} catch (error) {
+				console.error(`Error validating ${file.path}: `, error);
+				new Notice(`Error validating ${file.basename}`);
+			}
+		}
+
+		new Notice(`Validation complete! ✓ ${validCount} valid, ✗ ${invalidCount} invalid`);
+	}
+
+	// ─── Verify Transaction Integrity ────────────────────────────────────────────
+
+	// Blockchain chain-walk: latest → oldest, verifying hash + chain link at each step
+	public async verifyTransactionIntegrity(verification_depth: number): Promise<void> {
 		const transactionsFolder = this.plugin.settings.transactionsFolderPath;
 		const folder = this.plugin.app.vault.getAbstractFileByPath(transactionsFolder);
 
@@ -960,283 +1158,165 @@ export class FinanceDashboardView extends BasesView {
 			return;
 		}
 
-		const allFiles = folder.children.filter((file) => file instanceof TFile && file.extension === 'md') as TFile[];
+		const allFiles = folder.children.filter(f => f instanceof TFile && (f as TFile).extension === 'md') as TFile[];
 
-		// Sort by mtime descending (most recent first)
-		allFiles.sort((a, b) => b.stat.mtime - a.stat.mtime);
-
-		// If count is -1 or >= total, verify all
-		const filesToProcess = (count === -1 || count >= allFiles.length)
-			? allFiles
-			: allFiles.slice(0, count);
-
-		await this.verifyTransactionChecksum(filesToProcess);
-	}
-
-	// Core validation logic for new transactions (without checksums)
-	private async validateTransaction(filesToProcess: TFile[]): Promise<void> {
-		let validCount = 0;
-		let invalidCount = 0;
-
-		new Notice(`Validating ${filesToProcess.length} new transactions...`);
-
-		for (const file of filesToProcess) {
-			try {
-				const content = await this.plugin.app.vault.read(file);
-				const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-
-				if (!frontmatterMatch) continue;
-
-				const frontmatter = frontmatterMatch[1] || '';
-				const lines = frontmatter.split('\n');
-
-				// Parse frontmatter into object for commodity price lookup
-				const frontmatterObj: Record<string, any> = {};
-				for (const line of lines) {
-					const colonIndex = line.indexOf(':');
-					if (colonIndex !== -1) {
-						const key = line.substring(0, colonIndex).trim();
-						const value = line.substring(colonIndex + 1).trim();
-						frontmatterObj[key] = value;
-					}
-				}
-
-				// Calculate sum including commodities with their unit prices
-				let sum = 0;
-				const accountProps: Record<string, number> = {};
-				const newLines: string[] = [];
-				const commodities: string[] = [];
-
-				for (const line of lines) {
-					const colonIndex = line.indexOf(':');
-					if (colonIndex === -1) {
-						newLines.push(line);
-						continue;
-					}
-
-					const key = line.substring(0, colonIndex).trim();
-					const value = line.substring(colonIndex + 1).trim();
-
-					// Skip properties that shouldn't be in frontmatter or checksum
-					if (key === 'is_valid' || key === ACCOUNT_PREFIXES.INVALID_REASON || key === 'checksum') {
-						continue;
-					}
-
-					// Handle account properties
-					if (key.startsWith(ACCOUNT_PREFIXES.ASSET) || key.startsWith(ACCOUNT_PREFIXES.LIABILITY) ||
-						key.startsWith(ACCOUNT_PREFIXES.EXPENSE) || key.startsWith(ACCOUNT_PREFIXES.INCOME)) {
-						const numValue = parseFloat(value);
-						if (!isNaN(numValue)) {
-							sum += numValue;
-							accountProps[key] = numValue;
-						}
-					} else if (key.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
-						// Track commodities for unit price computation
-						const commodityName = key.substring(ACCOUNT_PREFIXES.COMMODITY.length);
-						const numValue = parseFloat(value);
-						if (!isNaN(numValue)) {
-							commodities.push(commodityName);
-							accountProps[key] = numValue;
-
-							// Get or compute unit price
-							const unitPrice = this.getCommodityPrice(commodityName, frontmatterObj);
-							const unitPriceKey = `${ACCOUNT_PREFIXES.UNIT_PRICE}${commodityName}`;
-							accountProps[unitPriceKey] = unitPrice;
-
-							// Add commodity value to sum
-							sum += numValue * unitPrice;
-							console.log(line, numValue, unitPrice)
-						}
-					} else if (key.startsWith(ACCOUNT_PREFIXES.UNIT_PRICE)) {
-						// Include existing UnitPrice in accountProps for checksum
-						console.log(line, value)
-						const numValue = parseFloat(value);
-						if (!isNaN(numValue)) {
-							accountProps[key] = numValue;
-						}
-					}
-
-					newLines.push(line);
-				}
-
-				// Add UnitPrice properties for commodities (if not already present)
-				for (const commodityName of commodities) {
-					const unitPriceKey = `${ACCOUNT_PREFIXES.UNIT_PRICE}${commodityName}`;
-					if (!frontmatterObj[unitPriceKey]) {
-						const unitPrice = accountProps[unitPriceKey]; // Already computed above
-						newLines.push(`${unitPriceKey}: ${unitPrice}`);
-					}
-				}
-
-				// Compute checksum from account properties
-				const checksum = this.computeChecksum(accountProps);
-
-				console.log(sum);
-				// Determine validity and build Invalid_reason if needed
-				const isValid = Math.abs(sum) < 0.01;
-				let invalidReason = '';
-
-				if (!isValid) {
-					invalidReason = `Transaction-difference-${sum.toFixed(2)}-should-be-0-please-fix`;
-				}
-
-				// Add validation properties
-				if (invalidReason) {
-					newLines.push(`${ACCOUNT_PREFIXES.INVALID_REASON}: ${invalidReason}`);
-				}
-				newLines.push(`checksum: ${checksum}`);
-				newLines.push(`is_valid: ${isValid}`);
-
-				// Add locked property for valid transactions
-				if (isValid) {
-					newLines.push(`locked: true`);
-				}
-
-				// Reconstruct content
-				const newFrontmatter = newLines.join('\n');
-				const bodyContent = content.substring(frontmatterMatch[0].length);
-				const newContent = `---\n${newFrontmatter}\n---${bodyContent}`;
-
-				// Always update (since we're adding checksum and possibly UnitPrice)
-				await this.plugin.app.vault.modify(file, newContent);
-
-				if (isValid) {
-					validCount++;
-				} else {
-					invalidCount++;
-				}
-			} catch (error) {
-				console.error(`Error validating ${file.path}: `, error);
+		// Collect valid+hashed transactions
+		const validTxFiles: TFile[] = [];
+		for (const file of allFiles) {
+			const content = await this.plugin.app.vault.read(file);
+			if (content.match(/^is_valid:\s*true/m) && content.match(/^hash:\s*\S/m)) {
+				validTxFiles.push(file);
 			}
 		}
 
-		new Notice(`Validation complete! ✓ ${validCount} valid, ✗ ${invalidCount} invalid`);
-	}
-
-	// Verify transaction integrity using checksum comparison
-	private async verifyTransactionChecksum(filesToProcess: TFile[]): Promise<void> {
-		let validCount = 0;
-		let invalidCount = 0;
-		let tamperedCount = 0;
-
-		new Notice(`Verifying ${filesToProcess.length} transactions...`);
-
-		for (const file of filesToProcess) {
-			try {
-				const content = await this.plugin.app.vault.read(file);
-				const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-
-				if (!frontmatterMatch) continue;
-
-				const frontmatter = frontmatterMatch[1] || '';
-				const lines = frontmatter.split('\n');
-
-				// Parse frontmatter
-				const frontmatterObj: Record<string, any> = {};
-				for (const line of lines) {
-					const colonIndex = line.indexOf(':');
-					if (colonIndex !== -1) {
-						const key = line.substring(0, colonIndex).trim();
-						const value = line.substring(colonIndex + 1).trim();
-						frontmatterObj[key] = value;
-					}
-				}
-
-				// Extract stored checksum
-				const storedChecksum = frontmatterObj['checksum'];
-
-				// Recompute account properties and checksum
-				let sum = 0;
-				const accountProps: Record<string, number> = {};
-				const newLines: string[] = [];
-
-				for (const line of lines) {
-					const colonIndex = line.indexOf(':');
-					if (colonIndex === -1) {
-						newLines.push(line);
-						continue;
-					}
-
-					const key = line.substring(0, colonIndex).trim();
-					const value = line.substring(colonIndex + 1).trim();
-
-					// Skip validation-related properties
-					if (key === 'is_valid' || key === ACCOUNT_PREFIXES.INVALID_REASON || key === 'checksum') {
-						continue;
-					}
-
-					// Collect account properties for checksum
-					if (key.startsWith(ACCOUNT_PREFIXES.ASSET) || key.startsWith(ACCOUNT_PREFIXES.LIABILITY) ||
-						key.startsWith(ACCOUNT_PREFIXES.EXPENSE) || key.startsWith(ACCOUNT_PREFIXES.INCOME) ||
-						key.startsWith(ACCOUNT_PREFIXES.COMMODITY) || key.startsWith(ACCOUNT_PREFIXES.UNIT_PRICE)) {
-						const numValue = parseFloat(value);
-						if (!isNaN(numValue)) {
-							accountProps[key] = numValue;
-
-							// Add to sum (commodities need UnitPrice multiplication)
-							if (key.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
-								const commodityName = key.substring(ACCOUNT_PREFIXES.COMMODITY.length);
-								const unitPriceKey = `${ACCOUNT_PREFIXES.UNIT_PRICE}${commodityName}`;
-								const unitPrice = accountProps[unitPriceKey] || parseFloat(frontmatterObj[unitPriceKey] || '0');
-								sum += numValue * unitPrice;
-							} else if (!key.startsWith(ACCOUNT_PREFIXES.UNIT_PRICE)) {
-								sum += numValue;
-							}
-						}
-					}
-
-					newLines.push(line);
-				}
-
-				// Compute new checksum
-				const computedChecksum = this.computeChecksum(accountProps);
-
-				// Check for issues
-				const checksumMismatch = storedChecksum !== computedChecksum;
-				const sumInvalid = Math.abs(sum) >= 0.01;
-				let invalidReason = '';
-				if (sumInvalid) {
-					invalidReason = `Transaction-difference-${sum.toFixed(2)}-should-be-0-please-fix`;
-				}
-				if (checksumMismatch) {
-					if (invalidReason) invalidReason += ' ';
-					invalidReason += `Checksum-mismatch-existing-${storedChecksum}-computed-${computedChecksum}`;
-				}
-
-				const isValid = !sumInvalid && !checksumMismatch;
-
-				// Update frontmatter with validation results
-				if (invalidReason) {
-					newLines.push(`${ACCOUNT_PREFIXES.INVALID_REASON}: ${invalidReason}`);
-				}
-				newLines.push(`checksum: ${storedChecksum}`); // Keep original checksum
-				newLines.push(`is_valid: ${isValid}`);
-				// Reconstruct content
-				const newFrontmatter = newLines.join('\n');
-				const bodyContent = content.substring(frontmatterMatch[0].length);
-				const newContent = `---\n${newFrontmatter}\n---${bodyContent}`;
-
-				// Only update if content changed
-				if (newContent !== content) {
-					await this.plugin.app.vault.modify(file, newContent);
-				}
-
-				if (isValid) {
-					validCount++;
-				} else {
-					invalidCount++;
-					if (checksumMismatch) tamperedCount++;
-				}
-			} catch (error) {
-				console.error(`Error verifying ${file.path}: `, error);
-			}
+		if (validTxFiles.length === 0) {
+			new Notice('No validated transactions found to verify.');
+			return;
 		}
 
-		const message = tamperedCount > 0
-			? `Verification complete! ✓ ${validCount} valid, ✗ ${invalidCount} invalid(${tamperedCount} tampered)`
-			: `Verification complete! ✓ ${validCount} valid, ✗ ${invalidCount} invalid`;
-		new Notice(message);
+		// Sort newest-modified first; chain head is the most recently validated tx
+		validTxFiles.sort((a, b) => b.stat.mtime - a.stat.mtime);
+
+		const depth = verification_depth === -1
+			? validTxFiles.length
+			: Math.min(verification_depth, validTxFiles.length);
+
+		new Notice(`Verifying ${depth} transaction(s)…`);
+
+		let headPath = validTxFiles[0]!.path;
+		let count = 0;
+		let verifiedCount = 0;
+
+		while (count < depth) {
+			const headFile = this.plugin.app.vault.getAbstractFileByPath(headPath);
+			if (!(headFile instanceof TFile)) break;
+
+			const result = await this.verifySingleTransaction(headFile);
+
+			if (!result.ok) {
+				new Notice(`⚠️ Chain broken at: ${headFile.basename}\n${result.errorMsg}`, 8000);
+				break;
+			}
+
+			verifiedCount++;
+			count++;
+
+			if (!result.prevPath) break; // Reached genesis
+			headPath = result.prevPath;
+		}
+
+		if (count >= depth || !validTxFiles[count]) {
+			new Notice(`✓ Integrity verified: ${verifiedCount} transaction(s) intact.`);
+		}
 	}
+
+	// Verify a single transaction: recompute hash, check stored hash, verify prev chain link
+	private async verifySingleTransaction(file: TFile): Promise<{
+		ok: boolean;
+		errorMsg?: string;
+		prevPath?: string;
+	}> {
+		try {
+			const content = await this.plugin.app.vault.read(file);
+			const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+			if (!fmMatch) return { ok: false, errorMsg: 'No frontmatter found' };
+
+			const fm = this.parseFrontmatter(fmMatch[1] || '');
+			const storedHash = fm[ACCOUNT_PREFIXES.HASH];
+			const storedPrevHash = fm[ACCOUNT_PREFIXES.PREV_VALID_TX_HASH];
+			const date = fm['date'] ?? '';
+
+			if (!storedHash) return { ok: false, errorMsg: 'No hash property found' };
+
+			// Rebuild accountProps
+			const accountProps: Record<string, number> = {};
+			for (const [key, value] of Object.entries(fm)) {
+				if (key.startsWith(ACCOUNT_PREFIXES.ASSET) ||
+					key.startsWith(ACCOUNT_PREFIXES.LIABILITY) ||
+					key.startsWith(ACCOUNT_PREFIXES.EXPENSE) ||
+					key.startsWith(ACCOUNT_PREFIXES.INCOME) ||
+					key.startsWith(ACCOUNT_PREFIXES.COMMODITY) ||
+					key.startsWith(ACCOUNT_PREFIXES.UNIT_PRICE)) {
+					const num = parseFloat(value);
+					if (!isNaN(num)) accountProps[key] = num;
+				}
+			}
+
+			const prevHashForCompute = storedPrevHash ?? 'seed0000';
+			const computedHash = this.computeTransactionHash(accountProps, date, prevHashForCompute);
+
+			if (computedHash !== storedHash) {
+				await this.markTxIntegrityError(file, fmMatch[1] || '',
+					content.substring(fmMatch[0].length),
+					`Hash mismatch — computed ${computedHash} stored ${storedHash}`);
+				return {
+					ok: false,
+					errorMsg: `Hash mismatch — file may have been tampered.\nComputed: ${computedHash}\nStored:   ${storedHash}`
+				};
+			}
+
+			// Verify the prev chain link
+			const prevTxRaw = fm[ACCOUNT_PREFIXES.PREV_VALID_TX]; // e.g. [[seed-transaction]]
+			if (!prevTxRaw) return { ok: true }; // No prev link — genesis
+
+			// Strip surrounding quotes (Obsidian may add them for YAML validity) and [[ ]] brackets
+			const prevBasename = prevTxRaw.replace(/^"|"$/g, '').replace(/^\[\[/, '').replace(/\]\]$/, '');
+
+			if (prevBasename === 'seed-transaction') {
+				// Genesis: prev hash must match the fixed seed
+				if (prevHashForCompute !== 'seed0000') {
+					return { ok: false, errorMsg: `Seed hash mismatch — expected seed0000, got ${prevHashForCompute}` };
+				}
+				return { ok: true }; // Chain complete
+			}
+
+			const transactionsFolder = this.plugin.settings.transactionsFolderPath;
+			const prevFilePath = `${transactionsFolder}/${prevBasename}.md`;
+			const prevFile = this.plugin.app.vault.getAbstractFileByPath(prevFilePath);
+
+			if (!(prevFile instanceof TFile)) {
+				return { ok: false, errorMsg: `Previous transaction not found: ${prevBasename}` };
+			}
+
+			// Check that prev file's actual hash == what we recorded in Prev_valid_transaction_hash
+			const prevContent = await this.plugin.app.vault.read(prevFile);
+			const prevFmMatch = prevContent.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+			if (!prevFmMatch) return { ok: false, errorMsg: `No frontmatter in prev tx: ${prevBasename}` };
+			const prevFm = this.parseFrontmatter(prevFmMatch[1] || '');
+			const prevActualHash = prevFm[ACCOUNT_PREFIXES.HASH];
+
+			if (prevActualHash !== storedPrevHash) {
+				await this.markTxIntegrityError(file, fmMatch[1] || '',
+					content.substring(fmMatch[0].length),
+					`Chain broken — prev tx hash changed. Recorded ${storedPrevHash} actual ${prevActualHash}`);
+				return {
+					ok: false,
+					errorMsg: `Chain broken at ${file.basename}.\nRecorded prev hash: ${storedPrevHash}\nActual prev hash:   ${prevActualHash}`
+				};
+			}
+
+			return { ok: true, prevPath: prevFile.path };
+
+		} catch (error) {
+			console.error(`Error verifying ${file.path}: `, error);
+			return { ok: false, errorMsg: `Exception: ${error}` };
+		}
+	}
+
+	// Helper: mark a transaction invalid with an integrity_error field
+	private async markTxIntegrityError(file: TFile, rawFm: string, bodyContent: string, msg: string): Promise<void> {
+		const lines = rawFm.split('\n').filter(l => {
+			const trimmed = l.trim();
+			const colonIdx = trimmed.indexOf(':');
+			const k = colonIdx !== -1 ? trimmed.substring(0, colonIdx).trim() : trimmed;
+			return k !== 'is_valid' && k !== ACCOUNT_PREFIXES.INTEGRITY_ERROR && k !== 'locked';
+		});
+		lines.push(`is_valid: false`);
+		lines.push(`${ACCOUNT_PREFIXES.INTEGRITY_ERROR}: ${msg}`);
+		await this.plugin.app.vault.modify(file, `---\n${lines.join('\n')}\n---${bodyContent}`);
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────────
 
 	private async logTransaction(): Promise<void> {
 		try {
