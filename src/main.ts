@@ -604,7 +604,7 @@ export class FinanceDashboardView extends BasesView {
 		return { categories, netWorth, lastUpdated: cache.lastUpdated };
 	}
 
-	public categorizeAccounts(): AccountCategory {
+	public categorizeAccounts(isForSnapshot: boolean = false): AccountCategory {
 		// ... (implementation same as before)
 		const categories: AccountCategory = {
 			assets: new Map(),
@@ -633,8 +633,9 @@ export class FinanceDashboardView extends BasesView {
 			// @ts-ignore
 			let sum = summaryValue.data;
 
-			// Apply commodity pricing with currency conversion if applicable
-			if (name.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
+			// Apply commodity pricing with currency conversion if applicable.
+			// Skip when isForSnapshot=true — snapshots store raw unit quantities, not monetary values.
+			if (name.startsWith(ACCOUNT_PREFIXES.COMMODITY) && !isForSnapshot) {
 				const commodityName = name.replace(ACCOUNT_PREFIXES.COMMODITY, '');
 				const pricing = this.plugin.settings.commodityPrices[commodityName];
 				if (pricing) {
@@ -1896,7 +1897,8 @@ export class FinanceDashboardView extends BasesView {
 				await this.plugin.app.vault.createFolder(folderPath);
 			}
 
-			// Create frontmatter with all accounts
+			// Build frontmatter from provided categories (caller is responsible for passing
+			// categorizeAccounts(true) so Commodity values are raw unit quantities, not monetary)
 			const frontmatter: Record<string, number> = {};
 
 			for (const [name, value] of categories.assets) {
@@ -1910,6 +1912,31 @@ export class FinanceDashboardView extends BasesView {
 			}
 			for (const [name, value] of categories.expenses) {
 				frontmatter[name] = value;
+			}
+
+			// For every Commodity-X in the snapshot, also record the UnitPrice-X at snapshot time
+			// Price is stored in the user's configured currency (currency conversion applied)
+			// so the snapshot is self-contained: qty × UnitPrice = monetary value in local currency
+			const allCategoryMaps = [categories.assets, categories.liabilities, categories.income, categories.expenses];
+			for (const map of allCategoryMaps) {
+				for (const [name] of map) {
+					if (name.startsWith(ACCOUNT_PREFIXES.COMMODITY)) {
+						const commodityName = name.replace(ACCOUNT_PREFIXES.COMMODITY, '');
+						const pricing = this.plugin.settings.commodityPrices[commodityName];
+						const unitPriceKey = `${ACCOUNT_PREFIXES.UNIT_PRICE}${commodityName}`;
+						if (pricing) {
+							let price = pricing.value;
+							if (pricing.currency === '$' && this.plugin.settings.currencySymbol === '₹') {
+								price *= this.plugin.settings.usdToInr;
+							} else if (pricing.currency === '₹' && this.plugin.settings.currencySymbol === '$') {
+								price /= this.plugin.settings.usdToInr;
+							}
+							frontmatter[unitPriceKey] = price;
+						} else {
+							frontmatter[unitPriceKey] = 1; // no pricing configured, treat as face value
+						}
+					}
+				}
 			}
 
 			// Add date
@@ -1981,6 +2008,22 @@ export class FinanceDashboardView extends BasesView {
 					let assets = 0;
 					let liabilities = 0;
 
+					// Pass 1: collect UnitPrice- values stored in this snapshot
+					// These are the historical prices at time of snapshot creation
+					const snapshotUnitPrices: Record<string, number> = {};
+					for (const line of lines) {
+						const colonIndex = line.indexOf(':');
+						if (colonIndex === -1) continue;
+						const key = line.substring(0, colonIndex).trim();
+						const value = line.substring(colonIndex + 1).trim();
+						if (key.startsWith('UnitPrice-')) {
+							const commodityName = key.replace('UnitPrice-', '');
+							const price = parseFloat(value);
+							if (!isNaN(price)) snapshotUnitPrices[commodityName] = price;
+						}
+					}
+
+					// Pass 2: accumulate asset/liability totals
 					// @ts-ignore
 					for (const line of lines) {
 						const colonIndex = line.indexOf(':');
@@ -1991,8 +2034,30 @@ export class FinanceDashboardView extends BasesView {
 
 						if (key === 'date') {
 							date = new Date(value);
-						} else if (key.startsWith('Asset-') || key.startsWith('Commodity-')) {
+						} else if (key.startsWith('Asset-')) {
 							assets += parseFloat(value) || 0;
+						} else if (key.startsWith('Commodity-')) {
+							const commodityName = key.replace('Commodity-', '');
+							const qty = parseFloat(value) || 0;
+
+							// Prefer the UnitPrice stored in this snapshot (historical price);
+							// fall back to current settings price if snapshot pre-dates this feature
+							if (snapshotUnitPrices[commodityName] !== undefined) {
+								assets += qty * snapshotUnitPrices[commodityName];
+							} else {
+								const pricing = this.plugin.settings.commodityPrices[commodityName];
+								if (pricing) {
+									let price = pricing.value;
+									if (pricing.currency === '$' && this.plugin.settings.currencySymbol === '₹') {
+										price *= this.plugin.settings.usdToInr;
+									} else if (pricing.currency === '₹' && this.plugin.settings.currencySymbol === '$') {
+										price /= this.plugin.settings.usdToInr;
+									}
+									assets += qty * price;
+								} else {
+									assets += qty; // no pricing at all, treat as face value
+								}
+							}
 						} else if (key.startsWith('Liability-')) {
 							liabilities += parseFloat(value) || 0;
 						}
@@ -2038,8 +2103,8 @@ export class FinanceDashboardView extends BasesView {
 		snapshotIcon.textContent = '+';
 		snapshotBtn.createSpan({ text: ' Add Snapshot' });
 		snapshotBtn.addEventListener('click', async () => {
-			// categorizesAccounts returns AccountCategory which is what createSnapshot expects
-			await this.createSnapshot(this.categorizeAccounts());
+			// Pass isForSnapshot=true so Commodity values are stored as raw unit quantities
+			await this.createSnapshot(this.categorizeAccounts(true));
 		});
 
 		const canvas = chartContainer.createEl('canvas');
