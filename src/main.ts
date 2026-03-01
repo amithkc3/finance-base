@@ -148,21 +148,19 @@ export default class PersonalFinancePlugin extends Plugin {
 				await this.app.vault.createFolder(this.settings.snapshotsFolderPath);
 			}
 
-			// Check if snapshots folder is empty and create default if needed
-			const snapshotsFolder = this.app.vault.getAbstractFileByPath(this.settings.snapshotsFolderPath);
-			if (snapshotsFolder instanceof TFolder) {
-				const snapshotFiles = snapshotsFolder.children.filter(f => f instanceof TFile && f.extension === 'md');
-				if (snapshotFiles.length === 0) {
-					const now = new Date();
-					const filename = `snapshot-initial.md`;
-					const content = `---\n` +
-						`date: ${now.toISOString()}\n` +
-						`---\n\n` +
-						`Initial empty snapshot to initialize charts.`;
+			// Check if initial snapshot exists and create it if not — use adapter.exists() to
+			// avoid a vault-cache miss that occurs when getAbstractFileByPath() is called
+			// immediately after createFolder() before Obsidian registers the new folder.
+			const initialSnapshotPath = `${this.settings.snapshotsFolderPath}/snapshot-initial.md`;
+			if (!(await this.app.vault.adapter.exists(initialSnapshotPath))) {
+				const now = new Date();
+				const content = `---\n` +
+					`date: ${now.toISOString()}\n` +
+					`---\n\n` +
+					`Initial empty snapshot to initialize charts.`;
 
-					await this.app.vault.create(`${this.settings.snapshotsFolderPath}/${filename}`, content);
-					new Notice('Created initial snapshot file');
-				}
+				await this.app.vault.create(initialSnapshotPath, content);
+				new Notice('Created initial snapshot file');
 			}
 
 			// 1. Create Usage Guide
@@ -185,12 +183,7 @@ export default class PersonalFinancePlugin extends Plugin {
 					await this.app.vault.createFolder(templateDir);
 				}
 
-				// Inject the dynamic usage guide link
-				// Remove extension from path for the wiki link
-				const guideLinkPath = this.settings.usageGuideFilePath.replace(/\.md$/, '');
-				const templateContent = transactionTemplateContent.replace('{{USAGE_GUIDE_LINK}}', guideLinkPath);
-
-				await this.app.vault.create(this.settings.templateFilePath, templateContent);
+				await this.app.vault.create(this.settings.templateFilePath, transactionTemplateContent);
 				new Notice('Created default transaction template');
 			}
 
