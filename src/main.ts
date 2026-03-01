@@ -24,7 +24,8 @@ const ACCOUNT_PREFIXES = {
 	HASH: 'hash',
 	PREV_VALID_TX: 'prev_valid_transaction',
 	PREV_VALID_TX_HASH: 'Prev_valid_transaction_hash',
-	INTEGRITY_ERROR: 'integrity_error'
+	INTEGRITY_ERROR: 'integrity_error',
+	TRANSACTION_ID: 'transaction_id'
 } as const;
 
 
@@ -206,7 +207,7 @@ export default class PersonalFinancePlugin extends Plugin {
 			if (!(await this.app.vault.adapter.exists(seedPath))) {
 				const seedDate = new Date().toISOString().slice(0, 16);
 				const seedHash = 'seed0000'; // Fixed genesis hash
-				const seedContent = `---\ncomment: Genesis seed transaction — do not edit\ndate: ${seedDate}\nhash: ${seedHash}\nis_valid: true\n---\n\n# Seed Transaction\nThis is the genesis block for the transaction integrity chain.\n`;
+				const seedContent = `---\ncomment: Genesis seed transaction — do not edit\ndate: ${seedDate}\nhash: ${seedHash}\n${ACCOUNT_PREFIXES.TRANSACTION_ID}: 0\nis_valid: true\n---\n\n# Seed Transaction\nThis is the genesis block for the transaction integrity chain.\n`;
 				await this.app.vault.create(seedPath, seedContent);
 				new Notice('Created seed transaction (genesis block)');
 			}
@@ -852,25 +853,30 @@ export class FinanceDashboardView extends BasesView {
 		return price;
 	}
 
-	// Find the last valid transaction (is_valid=true AND hash exists), sorted by mtime desc
-	private async findLastValidTransaction(): Promise<{ file: TFile; hash: string } | null> {
+	// Find the valid transaction with the highest transaction_id (chain tip)
+	private async findLastValidTransaction(): Promise<{ file: TFile; hash: string; transaction_id: number } | null> {
 		const transactionsFolder = this.plugin.settings.transactionsFolderPath;
 		const folder = this.plugin.app.vault.getAbstractFileByPath(transactionsFolder);
 		if (!(folder instanceof TFolder)) return null;
 
 		const allFiles = folder.children.filter((f): f is TFile => f instanceof TFile && f.extension === 'md');
-		allFiles.sort((a, b) => b.stat.mtime - a.stat.mtime);
+
+		let best: { file: TFile; hash: string; transaction_id: number } | null = null;
 
 		for (const file of allFiles) {
 			const content = await this.plugin.app.vault.read(file);
 			const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
 			if (!fmMatch) continue;
 			const fm = this.parseFrontmatter(fmMatch[1] || '');
-			if (fm['is_valid'] === 'true' && fm[ACCOUNT_PREFIXES.HASH]) {
-				return { file, hash: fm[ACCOUNT_PREFIXES.HASH]! };
+			if (fm['is_valid'] !== 'true' || !fm[ACCOUNT_PREFIXES.HASH]) continue;
+			const txId = parseInt(fm[ACCOUNT_PREFIXES.TRANSACTION_ID] ?? '', 10);
+			if (isNaN(txId)) continue;
+			if (best === null || txId > best.transaction_id) {
+				best = { file, hash: fm[ACCOUNT_PREFIXES.HASH]!, transaction_id: txId };
 			}
 		}
-		return null;
+
+		return best;
 	}
 
 	// ─── Validate New Transactions ───────────────────────────────────────────────
@@ -926,7 +932,8 @@ export class FinanceDashboardView extends BasesView {
 
 				// Build clean lines — strip any existing validation/computed fields before re-processing
 				const STRIP_FIELDS = new Set(['hash', 'is_valid', 'Invalid_reason',
-					'prev_valid_transaction', 'Prev_valid_transaction_hash', 'integrity_error']);
+					'prev_valid_transaction', 'Prev_valid_transaction_hash', 'integrity_error',
+					'transaction_id']);
 				const baseLines = rawFm.split('\n').filter(line => {
 					const trimmed = line.trim();
 					const colonIdx = trimmed.indexOf(':');
@@ -1024,11 +1031,13 @@ export class FinanceDashboardView extends BasesView {
 				baseLines.push(`${ACCOUNT_PREFIXES.PREV_VALID_TX}: "[[${prevLink}]]"`);
 				baseLines.push(`${ACCOUNT_PREFIXES.PREV_VALID_TX_HASH}: ${prevHash}`);
 
-				// ── Step 4: Compute hash & finalise ──────────────────────────
+				// ── Step 4: Compute hash & assign transaction_id ──────────────
 				const date = fmObj['date'] ?? '';
 				const txHash = this.computeTransactionHash(accountProps, date, prevHash);
+				const newTxId = prevTx !== null ? prevTx.transaction_id + 1 : 1;
 
 				baseLines.push(`${ACCOUNT_PREFIXES.HASH}: ${txHash}`);
+				baseLines.push(`${ACCOUNT_PREFIXES.TRANSACTION_ID}: ${newTxId}`);
 				baseLines.push(`is_valid: true`);
 
 				const newContent = `---\n${baseLines.join('\n')}\n---${bodyContent}`;
@@ -1074,8 +1083,16 @@ export class FinanceDashboardView extends BasesView {
 			return;
 		}
 
-		// Sort newest-modified first; chain head is the most recently validated tx
-		validTxFiles.sort((a, b) => b.stat.mtime - a.stat.mtime);
+		// Sort by transaction_id descending; chain head is the tx with the highest id
+		const txIdCache = new Map<string, number>();
+		for (const file of validTxFiles) {
+			const content = await this.plugin.app.vault.read(file);
+			const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+			const fm = fmMatch ? this.parseFrontmatter(fmMatch[1] || '') : {};
+			const txId = parseInt(fm[ACCOUNT_PREFIXES.TRANSACTION_ID] ?? '', 10);
+			txIdCache.set(file.path, isNaN(txId) ? -1 : txId);
+		}
+		validTxFiles.sort((a, b) => (txIdCache.get(b.path) ?? -1) - (txIdCache.get(a.path) ?? -1));
 
 		const depth = verification_depth === -1
 			? validTxFiles.length
