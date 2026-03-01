@@ -1185,11 +1185,7 @@ export class FinanceDashboardView extends BasesView {
 			const prevBasename = prevTxRaw.replace(/^"|"$/g, '').replace(/^\[\[/, '').replace(/\]\]$/, '');
 
 			if (prevBasename === 'seed-transaction') {
-				// Genesis: prev hash must match the fixed seed
-				if (prevHashForCompute !== 'seed0000') {
-					return { ok: false, errorMsg: `Seed hash mismatch — expected seed0000, got ${prevHashForCompute}` };
-				}
-				return { ok: true }; // Chain complete
+				return { ok: true }; // Reached genesis — chain complete
 			}
 
 			const transactionsFolder = this.plugin.settings.transactionsFolderPath;
@@ -1830,6 +1826,44 @@ export class FinanceDashboardView extends BasesView {
 		}
 	}
 
+	// Collect raw frontmatter from every transaction file so we can embed them in the snapshot
+	private async collectTransactionFrontmatters(): Promise<Record<string, unknown>[]> {
+		const txFolder = this.plugin.settings.transactionsFolderPath;
+		const folder = this.plugin.app.vault.getAbstractFileByPath(txFolder);
+		if (!(folder instanceof TFolder)) return [];
+
+		const result: Record<string, unknown>[] = [];
+
+		const files = folder.children
+			.filter((f): f is TFile => f instanceof TFile && f.extension === 'md');
+
+		// Sort by file creation time ascending so the JSON list is chronological
+		files.sort((a, b) => (a.stat?.ctime ?? 0) - (b.stat?.ctime ?? 0));
+
+		for (const file of files) {
+			try {
+				const content = await this.plugin.app.vault.read(file);
+				const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+				if (!fmMatch) continue;
+
+				// Parse frontmatter into a key->value map (raw strings)
+				const rawObj = this.parseFrontmatter(fmMatch[1] || '');
+
+				// Coerce numeric-looking values to numbers for richer JSON
+				const obj: Record<string, unknown> = { _file: file.basename };
+				for (const [k, v] of Object.entries(rawObj)) {
+					const num = Number(v);
+					obj[k] = !isNaN(num) && v.trim() !== '' ? num : v;
+				}
+				result.push(obj);
+			} catch (e) {
+				console.error(`[Snapshot] Failed to read tx file ${file.path}:`, e);
+			}
+		}
+
+		return result;
+	}
+
 	private createSnapshotButton(categories: AccountCategory): void {
 		const buttonContainer = this.containerEl.createDiv('snapshot-button-container');
 		const button = buttonContainer.createEl('button', {
@@ -1880,7 +1914,19 @@ export class FinanceDashboardView extends BasesView {
 			yamlLines.push(`date: ${dateStr}`);
 			yamlLines.push('---');
 			yamlLines.push('');
+
+			// Collect raw transaction frontmatters for the JSON ledger dump
+			const txRecords = await this.collectTransactionFrontmatters();
+			const jsonDump = JSON.stringify(txRecords, null, 2);
+
 			yamlLines.push(`Snapshot taken at: ${now.toLocaleString()}`);
+			yamlLines.push('');
+			yamlLines.push('## Transaction Ledger');
+			yamlLines.push('');
+			yamlLines.push('<!-- raw transaction frontmatter data — do not edit manually -->');
+			yamlLines.push('```json');
+			yamlLines.push(jsonDump);
+			yamlLines.push('```');
 
 			const content = yamlLines.join('\n');
 
