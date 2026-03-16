@@ -495,6 +495,8 @@ export class FinanceDashboardView extends BasesView {
 	public app: App;
 	private plugin: PersonalFinancePlugin;
 	private cachedData: DashboardCache | null = null;
+	// @ts-ignore - Required for Datacore integration, ignoring strict override rules
+	public controller: unknown;
 
 	// Typed getters for runtime-injected BasesView properties
 	private get datacoreConfig(): DatacoreData {
@@ -508,6 +510,7 @@ export class FinanceDashboardView extends BasesView {
 	constructor(controller: unknown, parentEl: HTMLElement, plugin: PersonalFinancePlugin) {
 		// @ts-ignore
 		super(controller);
+		this.controller = controller;
 		this.plugin = plugin;
 		this.containerEl = parentEl.createDiv('bases-finance-dashboard');
 	}

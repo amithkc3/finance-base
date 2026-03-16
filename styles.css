@@ -782,17 +782,17 @@
 }
 
 /* Validation modal buttons */
-.validate-action-btn {
+button.validate-action-btn {
     width: 100%;
-    background-color: #28a745;
-    color: white;
+    background-color: #28a745 !important;
+    color: white !important;
 }
 
-.verify-action-btn {
+button.verify-action-btn {
     width: 100%;
     margin-top: 10px;
-    background-color: var(--interactive-accent);
-    color: white;
+    background-color: var(--interactive-accent) !important;
+    color: white !important;
 }
 
 /* Input container spacing (for verify count input) */
