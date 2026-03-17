@@ -4,6 +4,7 @@ import { defineConfig } from "eslint/config";
 import obsidianmd from "eslint-plugin-obsidianmd";
 
 export default defineConfig([
+    { ignores: ["**/*.mjs", "**/*.js"] },
     ...obsidianmd.configs.recommended,
     {
         files: ["**/*.ts"],
@@ -18,3 +19,4 @@ export default defineConfig([
         // You can add your own configuration to override or add rules
     },
 ]);
+
