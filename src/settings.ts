@@ -1,5 +1,8 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab, Setting, MarkdownRenderer, Component } from "obsidian";
 import PersonalFinancePlugin from "./main";
+
+// @ts-ignore
+import pluginUsageContent from './resources/plugin-usage.md';
 
 // eslint-disable obsidianmd/ui/sentence-case -- These are file paths and explicit descriptors that must strictly preserve their exact casing
 const ROOT_FINANCE_PATH = 'Finance';
@@ -50,17 +53,34 @@ export const DEFAULT_SETTINGS: FinancePluginSettings = {
 
 export class FinanceSettingTab extends PluginSettingTab {
 	plugin: PersonalFinancePlugin;
+	private mdComponent: Component | null = null;
 
 	constructor(app: App, plugin: PersonalFinancePlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
+	hide(): void {
+		if (this.mdComponent) {
+			this.mdComponent.unload();
+			this.mdComponent = null;
+		}
+	}
+
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
+		if (this.mdComponent) {
+			this.mdComponent.unload();
+		}
+		this.mdComponent = new Component();
+		this.mdComponent.load();
+
 		new Setting(containerEl).setHeading().setName('Personal finance settings');
+
+		const guideDesc = containerEl.createEl('div', { cls: 'setting-item-description finance-usage-guide' });
+		void MarkdownRenderer.render(this.app, pluginUsageContent as string, guideDesc, '', this.mdComponent);
 
 		// General & Currency Section
 		new Setting(containerEl).setHeading().setName('General & currency');
