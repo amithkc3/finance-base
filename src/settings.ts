@@ -1,6 +1,18 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import PersonalFinancePlugin from "./main";
 
+// eslint-disable obsidianmd/ui/sentence-case -- These are file paths and explicit descriptors that must strictly preserve their exact casing
+const ROOT_FINANCE_PATH = 'Finance';
+const FINANCE_TRANSACTIONS_PATH = 'Finance/Transactions';
+const FINANCE_SNAPSHOTS_PATH = 'Finance/Snapshots';
+const TEMPLATE_FILE_PATH = 'Finance/Templates/Transaction.md';
+const USAGE_GUIDE_PATH = 'Finance/Personal-finances-usage-guide.md';
+const FINANCE_BASE_PATH = 'Finance/Finances.base';
+
+const DESC_TEMPLATE = 'Path to the markdown file used as a template for new transactions';
+const DESC_BASE = 'Path to the Finance.base file to open from the ribbon';
+// eslint-enable obsidianmd/ui/sentence-case
+
 export interface CommodityPrice {
 	value: number;
 	currency: '₹' | '$';
@@ -66,10 +78,8 @@ export class FinanceSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			// eslint-disable-next-line obsidianmd/ui/sentence-case
-			.setName('USD to INR conversion rate')
-			// eslint-disable-next-line obsidianmd/ui/sentence-case
-			.setDesc('Current exchange rate for converting USD to INR')
+			.setName('Usd to inr conversion rate')
+			.setDesc('Current exchange rate for converting usd to inr')
 			.addText(text => text
 				.setPlaceholder('83.0')
 				.setValue(this.plugin.settings.usdToInr.toString())
@@ -98,8 +108,7 @@ export class FinanceSettingTab extends PluginSettingTab {
 						}
 					});
 				text.inputEl.rows = 10;
-				// eslint-disable-next-line obsidianmd/no-static-styles-assignment -- Simple width property on a full-width container
-				text.inputEl.style.width = '100%';
+				text.inputEl.addClass('finance-textarea-full');
 			});
 
 		new Setting(containerEl)
@@ -123,7 +132,7 @@ export class FinanceSettingTab extends PluginSettingTab {
 			.setName('Root finance folder')
 			.setDesc('Root folder for all finance related files')
 			.addText(text => text
-				.setPlaceholder('Finance')
+				.setPlaceholder(ROOT_FINANCE_PATH)
 				.setValue(this.plugin.settings.rootFolderPath)
 				.onChange(async (value) => {
 					this.plugin.settings.rootFolderPath = value;
@@ -134,8 +143,7 @@ export class FinanceSettingTab extends PluginSettingTab {
 			.setName('Transactions folder path')
 			.setDesc('Folder where new transaction files will be created')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- Valid folder path
-				.setPlaceholder('Finance/Transactions')
+				.setPlaceholder(FINANCE_TRANSACTIONS_PATH)
 				.setValue(this.plugin.settings.transactionsFolderPath)
 				.onChange(async (value) => {
 					this.plugin.settings.transactionsFolderPath = value;
@@ -146,8 +154,7 @@ export class FinanceSettingTab extends PluginSettingTab {
 			.setName('Snapshots folder path')
 			.setDesc('Folder where net worth snapshots will be saved')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- Valid folder path
-				.setPlaceholder('Finance/Snapshots')
+				.setPlaceholder(FINANCE_SNAPSHOTS_PATH)
 				.setValue(this.plugin.settings.snapshotsFolderPath)
 				.onChange(async (value) => {
 					this.plugin.settings.snapshotsFolderPath = value;
@@ -156,10 +163,9 @@ export class FinanceSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Transaction template path')
-			// eslint-disable-next-line obsidianmd/ui/sentence-case
-			.setDesc('Path to the markdown file used as a template for new transactions')
+			.setDesc(DESC_TEMPLATE)
 			.addText(text => text
-				.setPlaceholder('Finance/Templates/Transaction.md')
+				.setPlaceholder(TEMPLATE_FILE_PATH)
 				.setValue(this.plugin.settings.templateFilePath)
 				.onChange(async (value) => {
 					this.plugin.settings.templateFilePath = value;
@@ -170,7 +176,7 @@ export class FinanceSettingTab extends PluginSettingTab {
 			.setName('Usage guide path')
 			.setDesc('Path where the usage guide will be created and linked')
 			.addText(text => text
-				.setPlaceholder('Finance/Personal-finances-usage-guide.md')
+				.setPlaceholder(USAGE_GUIDE_PATH)
 				.setValue(this.plugin.settings.usageGuideFilePath)
 				.onChange(async (value) => {
 					this.plugin.settings.usageGuideFilePath = value;
@@ -179,10 +185,9 @@ export class FinanceSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Finance base file path')
-			// eslint-disable-next-line obsidianmd/ui/sentence-case
-			.setDesc('Path to the Finance.base file to open from the ribbon')
+			.setDesc(DESC_BASE)
 			.addText(text => text
-				.setPlaceholder('Finance/Finances.base')
+				.setPlaceholder(FINANCE_BASE_PATH)
 				.setValue(this.plugin.settings.financeBasePath)
 				.onChange(async (value) => {
 					this.plugin.settings.financeBasePath = value;

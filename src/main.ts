@@ -254,8 +254,7 @@ class RatesAndPricesModal extends Modal {
 		pricesTextarea.value = JSON.stringify(this.plugin.settings.commodityPrices, null, 2);
 
 		// 2. Currency Rate Section
-		// eslint-disable-next-line obsidianmd/ui/sentence-case -- USD and INR are proper acronyms
-		contentEl.createEl('h3', { text: 'USD to INR rate' });
+		contentEl.createEl('h3', { text: 'Usd to inr rate' });
 		const rateInput = contentEl.createEl('input', {
 			type: 'number',
 			value: this.plugin.settings.usdToInr.toString(),
@@ -384,12 +383,12 @@ class ValidateTransactionsModal extends Modal {
 		});
 
 		// Option 2: Verify Transaction Integrity (BLUE/RED with input)
+		const DESC_VERIFY = 'Uses checksum comparison to detect tampering. Verifies recent N transactions or all transactions (-1).';
 		const option2Container = contentEl.createDiv({ cls: 'validation-option' });
 
 		option2Container.createEl('h4', { text: 'Verify transaction integrity' });
 		option2Container.createEl('p', {
-			// eslint-disable-next-line obsidianmd/ui/sentence-case -- description text is sentence case
-			text: 'Uses checksum comparison to detect tampering. Verifies recent N transactions or all transactions (-1).',
+			text: DESC_VERIFY,
 			cls: 'setting-item-description'
 		});
 
@@ -515,7 +514,7 @@ export class FinanceDashboardView extends BasesView {
 		this.containerEl = parentEl.createDiv('bases-finance-dashboard');
 	}
 
-	private async getMaxFileMtime(): Promise<{ maxMtime: number; fileCount: number }> {
+	private getMaxFileMtime(): { maxMtime: number; fileCount: number } {
 		const transactionsFolder = this.plugin.settings.transactionsFolderPath;
 		const folder = this.plugin.app.vault.getAbstractFileByPath(transactionsFolder);
 
@@ -575,7 +574,7 @@ export class FinanceDashboardView extends BasesView {
 	}
 
 	public async refreshDashboardData(force: boolean = false): Promise<{ categories: AccountCategory; netWorth: number; lastUpdated: string }> {
-		const { maxMtime, fileCount } = await this.getMaxFileMtime();
+		const { maxMtime, fileCount } = this.getMaxFileMtime();
 
 		// Try to load existing cache
 		if (!force) {

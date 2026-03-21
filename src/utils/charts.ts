@@ -1,5 +1,18 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
 import { Chart, ChartConfiguration, Colors } from 'chart.js/auto';
+
+export interface DoughnutTooltipContext {
+    label?: string;
+    parsed: number;
+}
+
+export interface LineTooltipContext {
+    dataset: {
+        label?: string;
+    };
+    parsed: {
+        y: number;
+    };
+}
 
 // Register the Colors plugin for default color palette
 Chart.register(Colors);
@@ -70,9 +83,10 @@ export function createPieChart(
                 },
                 tooltip: {
                     callbacks: {
-                        label: (context: any) => {
-                            const label = context.label || '';
-                            const value = formatCurrency((context.parsed as unknown as number), currencySymbol);
+                        label: (context: unknown) => {
+                            const ctx = context as DoughnutTooltipContext;
+                            const label = ctx.label || '';
+                            const value = formatCurrency(ctx.parsed, currencySymbol);
                             return `${label}: ${value}`;
                         }
                     }
@@ -215,9 +229,10 @@ export function createNetWorthLineChart(
                 },
                 tooltip: {
                     callbacks: {
-                        label: (context: any) => {
-                            const label = context.dataset.label || '';
-                            const value = formatCurrency((context.parsed.y as unknown as number), currencySymbol);
+                        label: (context: unknown) => {
+                            const ctx = context as LineTooltipContext;
+                            const label = ctx.dataset.label || '';
+                            const value = formatCurrency(ctx.parsed.y, currencySymbol);
                             return `${label}: ${value}`;
                         }
                     }

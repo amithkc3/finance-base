@@ -821,4 +821,9 @@ button.verify-action-btn {
 /* Commodity pricing warning */
 .commodity-warning {
     color: var(--text-error);
+}
+
+/* Settings textareas */
+.finance-textarea-full {
+    width: 100%;
 }
