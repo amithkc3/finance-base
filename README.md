@@ -19,6 +19,9 @@ A comprehensive personal finance dashboard for Obsidian, supporting double-entry
 - **Snapshotting**: Create periodic, static snapshots of your financial state to build historical Net Worth line chart data points indefinitely.
 - **Flexible & Customizable**: Customize folders completely natively within settings. 
 
+## Demo Video
+[![Personal Finance Plugin Demo](https://img.youtube.com/vi/wZ8ifoIMHBk/hqdefault.jpg)](https://www.youtube.com/watch?v=wZ8ifoIMHBk)
+
 ## Dashboard Page Screenshot
 ![screenshot](light-mode-personal-finance-screenshot.png)
 
