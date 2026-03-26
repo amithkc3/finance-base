@@ -1,9 +1,9 @@
 {
-	"id": "personal-finance",
-	"name": "Personal Finance",
+	"id": "finance-base",
+	"name": "Finance-Base",
 	"version": "1.2.0",
 	"minAppVersion": "0.15.0",
-	"description": "A comprehensive personal finance dashboard featuring double-entry accounting, net worth tracking, commodity support, and interactive charts.",
+	"description": "A comprehensive finance dashboard featuring double-entry accounting, net worth tracking, commodity support, and interactive charts.",
 	"author": "Amith KC",
 	"authorUrl": "",
 	"fundingUrl": "",

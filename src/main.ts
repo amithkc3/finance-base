@@ -4,7 +4,7 @@ import { createPieChart, formatCurrency, createNetWorthLineChart, SnapshotDataPo
 
 // Resource imports
 // @ts-ignore
-import usageGuideContent from './resources/Personal-finances-usage-guide.md';
+import usageGuideContent from './resources/Finance-Base-usage-guide.md';
 // @ts-ignore
 import transactionTemplateContent from './resources/Transaction.md';
 // @ts-ignore
@@ -49,7 +49,7 @@ const ACCOUNT_PREFIXES = {
 } as const;
 
 
-export default class PersonalFinancePlugin extends Plugin {
+export default class FinanceBasePlugin extends Plugin {
 	settings: FinancePluginSettings;
 
 	async onload() {
@@ -77,7 +77,7 @@ export default class PersonalFinancePlugin extends Plugin {
 
 		// @ts-ignore
 		this.registerBasesView(FinanceDashboardViewType, {
-			name: 'Personal Finance Dashboard',
+			name: 'Finance-Base Dashboard',
 			icon: 'lucide-wallet',
 			factory: (controller: unknown, containerEl: HTMLElement) => {
 				return new FinanceDashboardView(controller, containerEl, this) as unknown as BasesView;
@@ -239,9 +239,9 @@ export default class PersonalFinancePlugin extends Plugin {
 
 // Combined Modal
 class RatesAndPricesModal extends Modal {
-	plugin: PersonalFinancePlugin;
+	plugin: FinanceBasePlugin;
 
-	constructor(app: App, plugin: PersonalFinancePlugin) {
+	constructor(app: App, plugin: FinanceBasePlugin) {
 		super(app);
 		this.plugin = plugin;
 	}
@@ -311,9 +311,9 @@ class RatesAndPricesModal extends Modal {
 }
 
 class TableRowsModal extends Modal {
-	plugin: PersonalFinancePlugin;
+	plugin: FinanceBasePlugin;
 
-	constructor(app: App, plugin: PersonalFinancePlugin) {
+	constructor(app: App, plugin: FinanceBasePlugin) {
 		super(app);
 		this.plugin = plugin;
 	}
@@ -496,7 +496,7 @@ export class FinanceDashboardView extends BasesView {
 	private containerEl: HTMLElement;
 	// @ts-ignore
 	public app: App;
-	private plugin: PersonalFinancePlugin;
+	private plugin: FinanceBasePlugin;
 	private cachedData: DashboardCache | null = null;
 	// @ts-ignore - Required for Datacore integration, ignoring strict override rules
 	public controller: unknown;
@@ -510,7 +510,7 @@ export class FinanceDashboardView extends BasesView {
 		return this.data as unknown as DatacoreData | null;
 	}
 
-	constructor(controller: unknown, parentEl: HTMLElement, plugin: PersonalFinancePlugin) {
+	constructor(controller: unknown, parentEl: HTMLElement, plugin: FinanceBasePlugin) {
 		// @ts-ignore
 		super(controller);
 		this.controller = controller;

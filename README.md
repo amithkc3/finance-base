@@ -1,6 +1,6 @@
-# Personal Finance Plugin for Obsidian
+# Finance-Base Plugin for Obsidian
 
-A comprehensive personal finance dashboard for Obsidian, supporting double-entry accounting principles directly within your vault.
+A comprehensive Finance-Base dashboard for Obsidian, supporting double-entry accounting principles directly within your vault.
 
 ## Features
 
@@ -10,7 +10,7 @@ A comprehensive personal finance dashboard for Obsidian, supporting double-entry
     - **Recent Transactions Table**: View recent transactions in an aesthetic, customizable table directly from the dashboard.
     - **Visualizations**: Interactive points-in-time Net Worth line chart, and detailed Doughnut charts for category breakdowns across Assets, Liabilities, Income, and Expenses. Powered by Datacore for hyper-fast querying and caching.
 - **Blockchain-Linked Transaction Integrity**:
-    - Secures your personal finance history through cryptographic hashing, acting as a genuine ledger.
+    - Secures your Finance-Base history through cryptographic hashing, acting as a genuine ledger.
     - **Validation**: Automatically validates new transactions and seamlessly links them to previous entries using `prev_valid_transaction` and `Prev_valid_transaction_hash`.
     - **Tamper Verification**: Allows you to walk the ledger backwards mathematically to verify the integrity of past transactions. Any modification to a locked transaction will be instantly flagged as an `integrity_error`.
 - **Commodity Tracking & Pricing**:
@@ -20,25 +20,25 @@ A comprehensive personal finance dashboard for Obsidian, supporting double-entry
 - **Flexible & Customizable**: Customize folders completely natively within settings. 
 
 ## Demo Video
-[![Personal Finance Plugin Demo](https://img.youtube.com/vi/wZ8ifoIMHBk/hqdefault.jpg)](https://www.youtube.com/watch?v=wZ8ifoIMHBk)
+[![Finance-Base Plugin Demo](https://img.youtube.com/vi/wZ8ifoIMHBk/hqdefault.jpg)](https://www.youtube.com/watch?v=wZ8ifoIMHBk)
 
 ## Dashboard Page Screenshot
-![screenshot](light-mode-personal-finance-screenshot.png)
+![screenshot](light-mode-finance-base-screenshot.png)
 
 ## Installation
 
 ### Manual Installation
-1.  Create a folder named `personal-finance` inside your vault's `.obsidian/plugins/` directory.
+1.  Create a folder named `finance-base` inside your vault's `.obsidian/plugins/` directory.
 2.  Copy `main.js`, `styles.css`, and `manifest.json` to that folder.
-3.  Reload Obsidian and enable "Personal Finance" in Community Plugins settings.
+3.  Reload Obsidian and enable "Finance-Base" in Community Plugins settings.
 
-*(Recommended for best compatibility: ensure the plugin folder is named `personal-finance`)*
+*(Recommended for best compatibility: ensure the plugin folder is named `finance-base`)*
 
 ## Setup & Automated Initial Generation
-On your very first load, the plugin will automatically scaffold your personal finance environment securely. 
+On your very first load, the plugin will automatically scaffold your Finance-Base environment securely. 
 It drops essential files inside your designated Finance root path:
 - `Finances.base`: A BasesView-ready file that renders your entire dashboard interface.
-- `Personal-finances-usage-guide.md`: A custom usage guide referencing your unique setup.
+- `Finance-Base-usage-guide.md`: A custom usage guide referencing your unique setup.
 - `seed-transaction.md`: Found inside your Transactions folder, serving as the required "Genesis Block" template of your immutable blockchain ledger.
 
 ## Usage Guide
@@ -80,7 +80,7 @@ The dashboard integrates core functionality via Action Buttons:
 Snapshots exist to archive the current sum of all accounts (Assets & Liabilities). Snapshots are permanently saved directly inside the Snapshots folder as `.md` files. This lets your Net Worth Line graph plot historical wealth without running O(N^2) calculations traversing thousands of old entries, ensuring O(1) fetch times for graphs while keeping the dataset fully resilient against post-transaction timeline adjustments.
 
 ## Settings
-Go to **Settings > Personal Finance** to configure:
+Go to **Settings > Finance-Base** to configure:
 1. **General & Currency**:
    - Master currency assignments (`$`, `₹`).
    - Usd to Inr conversion rate.

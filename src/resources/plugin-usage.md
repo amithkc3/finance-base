@@ -1,4 +1,4 @@
-## Welcome to Personal Finance!
+## Welcome to Finance-Base!
 
 This plugin brings **Double-Entry Accounting** directly into your Obsidian vault. If you have never done accounting before, don't worry! This guide is designed to explain everything in simple, easy-to-understand terms.
 

@@ -1,4 +1,4 @@
-# Security Review: Personal Finance Plugin
+# Security Review: Finance-Base Plugin
 
 ## Summary
 The plugin has been reviewed for common security vulnerabilities. **No critical issues were found.**
@@ -63,4 +63,4 @@ The plugin has been reviewed for common security vulnerabilities. **No critical 
 2. **CSP Compliance**: The plugin does not inject external resources, so it is CSP-compliant by default.
 
 ## Conclusion
-The `personal-finance` plugin is **ready for open-sourcing** from a security perspective.
+The `finance-base` plugin is **ready for open-sourcing** from a security perspective.

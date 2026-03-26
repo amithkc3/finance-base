@@ -1,6 +1,6 @@
-# Personal Finance Plugin - Usage Guide
+# Finance-Base Plugin - Usage Guide
 
-This plugin turns Obsidian into a powerful personal finance dashboard using strict **double-entry accounting** principles. It helps you track your Net Worth, Assets, Liabilities, Income, and Expenses directly from your notes.
+This plugin turns Obsidian into a powerful Finance-Base dashboard using strict **double-entry accounting** principles. It helps you track your Net Worth, Assets, Liabilities, Income, and Expenses directly from your notes.
 
 ## 1. Core Concepts
 - **Double-Entry Accounting**: Every transaction gets balanced. Money leaving one account (e.g., Asset) must go to another (e.g., Expense).
@@ -13,7 +13,7 @@ This plugin turns Obsidian into a powerful personal finance dashboard using stri
     - `Commodity-` (e.g., `Commodity-Gold`)
 
 ## 2. Dashboard Overview
-The dashboard is your central hub. To open it, use the command palette (`Ctrl/Cmd + P`) and search for **"Personal Finance: Open Dashboard"** (or look for the wallet icon in the ribbon).
+The dashboard is your central hub. To open it, use the command palette (`Ctrl/Cmd + P`) and search for **"Finance-Base: Open Dashboard"** (or look for the wallet icon in the ribbon).
 
 ### Sections
 1.  **Net Worth Card**: Real-time calculation of (Assets - Liabilities).
@@ -26,7 +26,7 @@ The dashboard is your central hub. To open it, use the command palette (`Ctrl/Cm
 5.  **Category Breakdowns**: Detailed views of your Assets, Liabilities, Income, and Expenses with pie charts.
 
 ## 3. Settings & Setup
-Go to **Settings > Personal Finance** to configure the plugin.
+Go to **Settings > Finance-Base** to configure the plugin.
 -   **Currency Symbol**: Set your primary currency (e.g., ₹, $, €).
 -   **Root Folder**: Default is `Finance` (will be created automatically).
 -   **Transactions Folder**: Where your transaction notes are stored.

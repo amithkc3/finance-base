@@ -1,5 +1,5 @@
 import { App, PluginSettingTab, Setting, MarkdownRenderer, Component } from "obsidian";
-import PersonalFinancePlugin from "./main";
+import FinanceBasePlugin from "./main";
 
 // @ts-ignore
 import pluginUsageContent from './resources/plugin-usage.md';
@@ -9,7 +9,7 @@ const ROOT_FINANCE_PATH = 'Finance';
 const FINANCE_TRANSACTIONS_PATH = 'Finance/Transactions';
 const FINANCE_SNAPSHOTS_PATH = 'Finance/Snapshots';
 const TEMPLATE_FILE_PATH = 'Finance/Templates/Transaction.md';
-const USAGE_GUIDE_PATH = 'Finance/Personal-finances-usage-guide.md';
+const USAGE_GUIDE_PATH = 'Finance/Finance-Base-usage-guide.md';
 const FINANCE_BASE_PATH = 'Finance/Finances.base';
 
 const DESC_TEMPLATE = 'Path to the markdown file used as a template for new transactions';
@@ -45,17 +45,17 @@ export const DEFAULT_SETTINGS: FinancePluginSettings = {
 	transactionsFolderPath: 'Finance/Transactions',
 	snapshotsFolderPath: 'Finance/Snapshots',
 	templateFilePath: 'Finance/Templates/Transaction.md',
-	usageGuideFilePath: 'Finance/Personal-finances-usage-guide.md',
+	usageGuideFilePath: 'Finance/Finance-Base-usage-guide.md',
 	dashboardDataPath: 'Finance/dashboard-data.json',
 	financeBasePath: 'Finance/Finances.base',
 	blockchainEnabled: true,
 }
 
 export class FinanceSettingTab extends PluginSettingTab {
-	plugin: PersonalFinancePlugin;
+	plugin: FinanceBasePlugin;
 	private mdComponent: Component | null = null;
 
-	constructor(app: App, plugin: PersonalFinancePlugin) {
+	constructor(app: App, plugin: FinanceBasePlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -77,7 +77,8 @@ export class FinanceSettingTab extends PluginSettingTab {
 		this.mdComponent = new Component();
 		this.mdComponent.load();
 
-		new Setting(containerEl).setHeading().setName('Personal finance settings');
+		// eslint-disable-next-line obsidianmd/ui/sentence-case
+		new Setting(containerEl).setHeading().setName('Finance-Base settings');
 
 		const guideDesc = containerEl.createEl('div', { cls: 'setting-item-description finance-usage-guide' });
 		void MarkdownRenderer.render(this.app, pluginUsageContent as string, guideDesc, '', this.mdComponent);

@@ -16,7 +16,7 @@ UnitPrice-Gold: 0
 
 # Seed Transaction & Usage Guidelines
 
-Welcome to the Personal Finance plugin! This is the genesis block for the transaction integrity chain. It is required for the blockchain-linked ledger to verify your transaction history. **Please do not delete or modify this file.**
+Welcome to the Finance-Base plugin! This is the genesis block for the transaction integrity chain. It is required for the blockchain-linked ledger to verify your transaction history. **Please do not delete or modify this file.**
 
 ## How to use transactions
 
