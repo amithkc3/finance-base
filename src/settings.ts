@@ -77,8 +77,7 @@ export class FinanceSettingTab extends PluginSettingTab {
 		this.mdComponent = new Component();
 		this.mdComponent.load();
 
-		// eslint-disable-next-line obsidianmd/ui/sentence-case
-		new Setting(containerEl).setHeading().setName('Finance-Base settings');
+		new Setting(containerEl).setHeading().setName('Finance-base settings');
 
 		const guideDesc = containerEl.createEl('div', { cls: 'setting-item-description finance-usage-guide' });
 		void MarkdownRenderer.render(this.app, pluginUsageContent as string, guideDesc, '', this.mdComponent);
